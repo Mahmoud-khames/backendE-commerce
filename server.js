@@ -77,3 +77,6 @@ app.listen(PORT, () => {
   console.log(`Stripe webhook endpoint: ${process.env.BACKEND_URL}/api/stripe/webhook`);
 });
   
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
