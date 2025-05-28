@@ -28,7 +28,7 @@ dotenv.config();
 // Middleware
 app.use(
   cors({
-    origin: "http://localhost:3000", // Match your frontend URL
+    origin: "https://backend-e-commerce-six.vercel.app/", // Match your frontend URL
     methods: ["GET", "POST", "PUT", "DELETE"], 
     allowedHeaders: ["Content-Type", "Authorization"],
   })
