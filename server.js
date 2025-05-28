@@ -63,7 +63,7 @@ app.use("/api/customize", customizeRouter);
 app.use("/api/coupon", couponRouter);
 app.use("/api/contact", contactRouter);
 app.use("/api/review", reviewRouter);
-app.use("/api/cart", cartRouter);
+app.use("/api/cart", cartRouter);   
 app.use("/api/wishlist", wishlistRouter);
 app.use("/api/stripe", stripeRouter);
 
