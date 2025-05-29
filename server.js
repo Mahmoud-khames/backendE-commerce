@@ -1,4 +1,4 @@
-require('dotenv').config();
+require("dotenv").config();
 const express = require("express");
 const app = express();
 const dotenv = require("dotenv");
@@ -36,13 +36,14 @@ app.use(
         callback(new Error("Not allowed by CORS"));
       }
     },
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true, // If your app uses cookies or authentication
+    credentials: true,
   })
 );
+
 app.use((req, res, next) => {
-  if (req.originalUrl === '/api/stripe/webhook') {
+  if (req.originalUrl === "/api/stripe/webhook") {
     next();
   } else {
     express.json()(req, res, next);
@@ -71,12 +72,12 @@ app.use("/api/customize", customizeRouter);
 app.use("/api/coupon", couponRouter);
 app.use("/api/contact", contactRouter);
 app.use("/api/review", reviewRouter);
-app.use("/api/cart", cartRouter);   
+app.use("/api/cart", cartRouter);
 app.use("/api/wishlist", wishlistRouter);
 app.use("/api/stripe", stripeRouter);
 
 // Error handler
-app.use(errorHandler); 
+app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 4000;
@@ -84,7 +85,7 @@ app.listen(PORT, () => {
   console.log(`Backend server is running on port ${PORT}!`);
   console.log(`Stripe webhook endpoint: ${process.env.BACKEND_URL}/api/stripe/webhook`);
 });
-  
+
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
