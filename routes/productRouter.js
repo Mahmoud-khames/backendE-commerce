@@ -27,7 +27,7 @@ router.get("/discounted", productController.getDiscountedProducts); // Make disc
 router.get("/bestselling", productController.getBestSellingProducts); // Make best selling products public
 
 // Protected routes
-router.get("/", authMiddleware, productController.getAllProduct);
+router.get("/", productController.getAllProduct);
 router.get("/new", authMiddleware, productController.getNewProducts);
 router.get("/dashboard/count", authMiddleware, isAdmin, productController.getProductsCount);
 router.get("/:slug", productController.getProductBySlug);
