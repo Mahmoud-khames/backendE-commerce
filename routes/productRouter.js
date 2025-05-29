@@ -28,7 +28,7 @@ router.get("/bestselling", productController.getBestSellingProducts); // Make be
 
 // Protected routes
 router.get("/", productController.getAllProduct);
-router.get("/new", authMiddleware, productController.getNewProducts);
+router.get("/new",  productController.getNewProducts);
 router.get("/dashboard/count", authMiddleware, isAdmin, productController.getProductsCount);
 router.get("/:slug", productController.getProductBySlug);
 router.post(
