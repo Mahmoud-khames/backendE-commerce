@@ -27,12 +27,20 @@ dotenv.config();
 
 // Middleware
 app.use(
-  cors({ 
-    origin: "https://front-end-e-commerce-seto.vercel.app", // Match your frontend URL  "https://front-end-e-commerce-seto.vercel.app"
-    methods: ["GET", "POST", "PUT", "DELETE"], 
+  cors({
+    origin: (origin, callback) => {
+      const allowedOrigin = "https://front-end-e-commerce-seto.vercel.app";
+      if (!origin || origin === allowedOrigin || origin === `${allowedOrigin}/`) {
+        callback(null, allowedOrigin);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true, // If your app uses cookies or authentication
   })
-); 
+);
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/stripe/webhook') {
     next();
