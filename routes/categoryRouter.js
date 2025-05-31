@@ -38,7 +38,7 @@ const upload = multer({
 });
 
 // مسارات الفئات
-router.get("/", authMiddleware, categoryController.getAllCategories);
+router.get("/", categoryController.getAllCategories);
 router.get("/:id", authMiddleware, categoryController.getCategoryById);
 router.post(
   "/",

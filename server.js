@@ -41,7 +41,7 @@ app.use(
     credentials: true,
   })
 );
-
+// https://front-end-e-commerce-seto.vercel.app
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/stripe/webhook") {
     next();
@@ -53,11 +53,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 // Serve static files
-app.use("/backend/uploads/products", express.static(path.join(__dirname, "public/uploads/products")));
-app.use("/backend/uploads/users", express.static(path.join(__dirname, "public/uploads/users")));
-app.use("/backend/uploads/categories", express.static(path.join(__dirname, "public/uploads/categories")));
-app.use("/backend/uploads/customize", express.static(path.join(__dirname, "public/uploads/customize")));
-app.use("/backend/uploads/reviews", express.static(path.join(__dirname, "public/uploads/reviews")));
+// Static file serving removed for all uploads (products, categories, customize, reviews, users) - using Vercel Blob storage instead
 
 // Database
 connectDB();
@@ -78,7 +74,7 @@ app.use("/api/stripe", stripeRouter);
 
 // Error handler
 app.use(errorHandler);
-
+  
 // Start server
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
