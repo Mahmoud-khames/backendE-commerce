@@ -29,7 +29,7 @@ dotenv.config();
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowedOrigin = "http://localhost:3000";
+      const allowedOrigin = "https://front-end-e-commerce-seto.vercel.app";
       if (!origin || origin === allowedOrigin || origin === `${allowedOrigin}/`) {
         callback(null, allowedOrigin);
       } else {
