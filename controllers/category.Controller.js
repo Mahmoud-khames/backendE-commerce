@@ -58,16 +58,11 @@ class Category {
       };
 
       // Handle image upload
-      if (!req.file) {
+      if (req.file) {
+        categoryData.image = `/backend/uploads/categories/${req.file.filename}`;
+      } else {
         return next(new AppError("Category image is required", 400));
       }
-      
-      const { url } = await put(
-        `categories/${Date.now()}-${req.file.originalname}`,
-        req.file.buffer,
-        { access: 'public' }
-      );
-      categoryData.image = url;
 
       const category = await categoryModel.create(categoryData);
       
@@ -120,22 +115,14 @@ class Category {
 
       // Handle image upload
       if (req.file) {
-        // Delete old image from blob if exists
+        // Delete old image if exists
         if (category.image) {
-          try {
-            const blobUrl = new URL(category.image);
-            await del(blobUrl.pathname);
-          } catch (error) {
-            console.error(`Failed to delete old image: ${error}`);
+          const oldImagePath = path.join(__dirname, "../public", category.image);
+          if (fs.existsSync(oldImagePath)) {
+            fs.unlinkSync(oldImagePath);
           }
         }
-        
-        const { url } = await put(
-          `categories/${Date.now()}-${req.file.originalname}`,
-          req.file.buffer,
-          { access: 'public' }
-        );
-        updateData.image = url;
+        updateData.image = `/backend/uploads/categories/${req.file.filename}`;
       }
 
       const updatedCategory = await categoryModel.findByIdAndUpdate(

@@ -1,20 +1,23 @@
-const { put, del } = require('@vercel/blob');
+const fs = require("fs");
+const path = require("path");
 const Product = require("../models/productModel");
 const AppError = require("../utils/AppError");
 
 class ProductController {
-  // Delete images from Vercel Blob storage
-  static async deleteImages(images) {
+  // Delete image files from disk
+  static deleteImages(images) {
     if (!Array.isArray(images)) return;
 
-    await Promise.all(images.map(async (image) => {
+    images.forEach((image) => {
       try {
-        const blobUrl = new URL(image);
-        await del(blobUrl.pathname);
+        const filePath = path.join(__dirname, "../public/uploads/products", image);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
       } catch (error) {
         console.error(`Failed to delete image ${image}:`, error);
       }
-    }));
+    });
   }
 
   // تحديث حالة المنتجات الجديدة والخصومات
@@ -183,25 +186,18 @@ class ProductController {
       if (req.files && req.files.length > 0) {
         const mainImage = req.files.find((f) => f.fieldname === "productImage");
         if (mainImage) {
-          const { url } = await put(
-            `products/${Date.now()}-${mainImage.originalname}`,
-            mainImage.buffer,
-            { access: 'public' }
-          );
-          product.productImage = url;
+          // Delete old main image if exists
+          if (product.productImage) {
+            const oldImagePath = product.productImage.split("/").pop();
+            ProductController.deleteImages([oldImagePath]);
+          }
+          product.productImage =
+            `/backend/uploads/products/${mainImage.filename}`;
         }
 
         const productImagesFiles = req.files.filter(f => f.fieldname === "productImages");
         if (productImagesFiles.length > 0) {
-          const uploadPromises = productImagesFiles.map(async (file) => {
-            const { url } = await put(
-              `products/${Date.now()}-${file.originalname}`,
-              file.buffer,
-              { access: 'public' }
-            );
-            return url;
-          });
-          const newImages = await Promise.all(uploadPromises);
+          const newImages = productImagesFiles.map(f => `/backend/uploads/products/${f.filename}`);
           await Product.updateOne({ productSlug: slug }, {
             $push: { productImages: { $each: newImages } },
           });
@@ -317,24 +313,12 @@ class ProductController {
 
       const mainImage = req.files.find((f) => f.fieldname === "productImage");
       if (!mainImage) return next(new AppError("Main product image is required", 400));
-      
-      const { url: mainImageUrl } = await put(
-        `products/${Date.now()}-${mainImage.originalname}`,
-        mainImage.buffer,
-        { access: 'public' }
-      );
-      productData.productImage = mainImageUrl;
+      productData.productImage = `/backend/uploads/products/${mainImage.filename}`;
 
       const otherImages = req.files.filter((f) => f.fieldname === "productImages");
-      const uploadPromises = otherImages.map(async (file) => {
-        const { url } = await put(
-          `products/${Date.now()}-${file.originalname}`,
-          file.buffer,
-          { access: 'public' }
-        );
-        return url;
-      });
-      productData.productImages = await Promise.all(uploadPromises);
+      productData.productImages = otherImages.map(
+        (f) => `/backend/uploads/products/${f.filename}`
+      );
 
       const newProduct = new Product(productData);
       await newProduct.save();

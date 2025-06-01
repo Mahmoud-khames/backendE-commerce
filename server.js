@@ -29,7 +29,7 @@ dotenv.config();
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowedOrigin = "https://front-end-e-commerce-seto.vercel.app";
+      const allowedOrigin = "http://localhost:3000";
       if (!origin || origin === allowedOrigin || origin === `${allowedOrigin}/`) {
         callback(null, allowedOrigin);
       } else {
@@ -53,7 +53,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 // Serve static files
-// Static file serving removed for all uploads (products, categories, customize, reviews, users) - using Vercel Blob storage instead
+app.use("/backend/uploads/products", express.static(path.join(__dirname, "public/uploads/products")));
+app.use("/backend/uploads/users", express.static(path.join(__dirname, "public/uploads/users")));
+app.use("/backend/uploads/categories", express.static(path.join(__dirname, "public/uploads/categories")));
+app.use("/backend/uploads/customize", express.static(path.join(__dirname, "public/uploads/customize")));
+app.use("/backend/uploads/reviews", express.static(path.join(__dirname, "public/uploads/reviews")));
 
 // Database
 connectDB();
@@ -74,7 +78,7 @@ app.use("/api/stripe", stripeRouter);
 
 // Error handler
 app.use(errorHandler);
-  
+
 // Start server
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
