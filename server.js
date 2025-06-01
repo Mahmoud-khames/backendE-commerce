@@ -26,12 +26,16 @@ const stripeRouter = require("./routes/stripeRouter");
 dotenv.config();
 
 // Middleware
+const allowedOrigins = [
+  "https://front-end-e-commerce-seto.vercel.app",
+  "http://localhost:3000",
+];
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowedOrigin = "https://front-end-e-commerce-seto.vercel.app";
-      if (!origin || origin === allowedOrigin || origin === `${allowedOrigin}/`) {
-        callback(null, allowedOrigin);
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
       }
@@ -41,15 +45,17 @@ app.use(
     credentials: true,
   })
 );
+
 // https://front-end-e-commerce-seto.vercel.app
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/stripe/webhook") {
     next();
   } else {
-    express.json()(req, res, next);
+    express.json({ limit: "10mb" })(req, res, next); // زوّد الحجم حسب احتياجك
   }
 });
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
 app.use(morgan("dev"));
 
 // Serve static files
