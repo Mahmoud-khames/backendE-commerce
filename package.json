@@ -13,7 +13,7 @@
     "@vercel/blob": "^1.1.1",
     "bcryptjs": "^3.0.2",
     "braintree": "^3.29.0",
-    "cloudinary": "^2.6.1",
+    "cloudinary": "^1.27.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
