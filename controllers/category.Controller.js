@@ -169,7 +169,7 @@ class CategoryController {
       }
   
       // رفع الصورة الجديدة
-      const result = await uploadToCloudinary(req.file.path, 'categories');
+      const result = await uploadToCloudinary(req.file.buffer, 'categories');
   
       // تحديث الفئة
       const updatedCategory = await categoryModel.findByIdAndUpdate(

@@ -126,7 +126,7 @@ class ReviewController {
       }
 
       // رفع الصورة على Cloudinary
-      const result = await uploadToCloudinary(req.file.path, "reviews");
+      const result = await uploadToCloudinary(req.file.buffer, "reviews");
 
       const review = await reviewModel.findByIdAndUpdate(
         reviewId,

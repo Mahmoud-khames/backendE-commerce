@@ -103,7 +103,7 @@ class Customize {
       }
 
       console.log("File uploaded:", req.file);
-      const result = await uploadToCloudinary(req.file.path, 'customize');
+      const result = await uploadToCloudinary(req.file.buffer, 'customize');
       const imagePath = result.url;
 
       // البحث عن تخصيص موجود أو إنشاء واحد جديد

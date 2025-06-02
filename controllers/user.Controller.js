@@ -64,7 +64,7 @@ class User {
           const userImageFile = req.files.find((f) => f.fieldname === "userImage");
           if (userImageFile) {
             try {
-              const result = await uploadToCloudinary(userImageFile.path, 'users');
+              const result = await uploadToCloudinary(userImageFile.buffer, 'users');
               newUser.userImage = result.url;
             } catch (err) {
               console.error("Image upload error:", err);
@@ -131,7 +131,7 @@ class User {
             }
       
             // رفع الصورة الجديدة
-            const result = await uploadToCloudinary(userImageFile.path, 'users');
+            const result = await uploadToCloudinary(userImageFile.buffer, 'users');
             updateData.userImage = result.url;
           } catch (err) {
             console.error("Image upload error:", err);
