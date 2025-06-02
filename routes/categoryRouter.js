@@ -7,18 +7,7 @@ const fs = require("fs");
 const { authMiddleware, isAdmin } = require("../middlewares/authMiddleware");
 
 // تكوين تخزين الصور (مؤقتًا قبل الرفع إلى Cloudinary)
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../public/uploads/temp");
-    fs.mkdirSync(uploadPath, { recursive: true }); // التأكد من وجود المجلد
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = path.extname(file.originalname);
-    cb(null, uniqueSuffix + extension);
-  },
-});
+const storage = multer.memoryStorage();
 
 // فلتر للتأكد من أن الملف المرفوع هو صورة
 const fileFilter = (req, file, cb) => {
@@ -30,7 +19,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({ 
-  storage,
+  storage, 
   fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB

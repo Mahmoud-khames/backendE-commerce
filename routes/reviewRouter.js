@@ -7,18 +7,7 @@ const path = require("path");
 const fs = require("fs");
 
 // تكوين تخزين الصور (مؤقتًا قبل الرفع إلى Cloudinary)
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../public/uploads/temp");
-    fs.mkdirSync(uploadPath, { recursive: true });
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const extension = path.extname(file.originalname);
-    cb(null, uniqueSuffix + extension);
-  },
-});
+const storage = multer.memoryStorage();
 
 // فلتر للتأكد من أن الملف المرفوع هو صورة
 const fileFilter = (req, file, cb) => {
@@ -38,11 +27,11 @@ const upload = multer({
 router.get("/", reviewController.getAllReviews);
 router.get("/:productId", reviewController.getReviewsByProductId);
 router.post("/", authMiddleware, reviewController.createReview);
-router.put(
-  "/:productId",
-  authMiddleware,
-  reviewController.updateReviewByProductId
-);
+// router.put(
+//   "/:productId",
+//   authMiddleware,
+//   reviewController.updateReviewByProductId
+// );
 router.delete("/:id", authMiddleware, reviewController.deleteReview);
 router.post(
   "/uploadReviewImage",
@@ -56,5 +45,6 @@ router.delete(
   authMiddleware,
   reviewController.deleteReviewImage
 );
+router.put("/reviews/:reviewId", reviewController.updateReviewById);
 
 module.exports = router;

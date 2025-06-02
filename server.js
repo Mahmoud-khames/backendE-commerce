@@ -82,20 +82,20 @@ app.use("/api/wishlist", wishlistRouter);
 app.use("/api/stripe", stripeRouter);
 
 // Serve static files (if needed)
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production') {  
   app.use(express.static(path.join(__dirname, 'public')));
 }
 
 // Error handler 
-app.use(errorHandler);
+app.use(errorHandler); 
 app.use(morgan("dev"));
 // Start server
 const PORT = process.env.PORT || 4000;
 const server = app.listen(PORT, () => {
   console.log(`Backend server is running on port ${PORT}!`);
   console.log(`Stripe webhook endpoint: ${process.env.BACKEND_URL}/api/stripe/webhook`);
-});
-
+}); 
+ 
 // Basic route for testing
 app.get("/", (req, res) => {
   res.send("API is running...");

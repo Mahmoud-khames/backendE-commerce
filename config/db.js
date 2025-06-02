@@ -12,7 +12,7 @@ const connectDB = async () => {
             console.log("Product indexes created or verified");
         }
     } catch (error) {
-        console.log(error);
+        console.log(error);   
         process.exit(1); 
     }
 };

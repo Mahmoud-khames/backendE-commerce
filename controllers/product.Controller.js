@@ -92,70 +92,58 @@ class ProductController {
         productDiscountEndDate,
         NEW,
       } = req.body;
-
+  
       const product = await Product.findOne({ productSlug: slug });
       if (!product) return next(new AppError("Product not found", 404));
-
-      // حذف الصور المحددة
+  
+      // حذف الصور القديمة
       const imagesToDelete = JSON.parse(deletedImages);
-      if (imagesToDelete.length > 0) {
+      if (Array.isArray(imagesToDelete) && imagesToDelete.length > 0) {
         await ProductController.deleteImages(imagesToDelete);
         product.productImages = product.productImages.filter(
           (img) => !imagesToDelete.includes(img)
         );
       }
-
-      // حساب سعر الخصم وحالة الخصم
-      const discountPercentage = productDiscountPercentage
-        ? parseFloat(productDiscountPercentage)
-        : 0;
+  
+      // حساب الخصم
+      const discountPercentage = parseFloat(productDiscountPercentage) || 0;
       const price = parseFloat(productPrice) || product.productPrice;
       const calculatedDiscountPrice =
         discountPercentage > 0 ? price - (price * (discountPercentage / 100)) : 0;
-
+  
       const now = new Date();
       const discountStartDate = productDiscountStartDate
         ? new Date(productDiscountStartDate)
         : product.productDiscountStartDate;
+  
       const discountEndDate = productDiscountEndDate
         ? new Date(productDiscountEndDate)
         : product.productDiscountEndDate;
-
+  
       const hasActiveDiscount =
         discountPercentage > 0 &&
         discountStartDate &&
         discountEndDate &&
         now >= discountStartDate &&
         now <= discountEndDate;
-
-      // تعيين حالة المنتج الجديد
+  
+      // تحديث حالة المنتج الجديد
       const isNew = NEW === "true" || NEW === true;
       const newUntil = isNew
         ? new Date(now.getTime() + 24 * 60 * 60 * 1000)
         : product.newUntil;
-
-      // تحديث بيانات المنتج
+  
+      // تحديث خصائص المنتج الأساسية
       product.productName = productName || product.productName;
       product.productDescription = productDescription || product.productDescription;
-      product.productPrice = parseFloat(productPrice) || product.productPrice;
-      product.oldProductPrice = oldProductPrice
-        ? parseFloat(oldProductPrice)
-        : product.oldProductPrice;
-      product.productColors = productColors
-        ? JSON.parse(productColors)
-        : product.productColors;
-      product.productSizes = productSizes
-        ? JSON.parse(productSizes)
-        : product.productSizes;
+      product.productPrice = price;
+      product.oldProductPrice = oldProductPrice ? parseFloat(oldProductPrice) : product.oldProductPrice;
+      product.productColors = productColors ? JSON.parse(productColors) : product.productColors;
+      product.productSizes = productSizes ? JSON.parse(productSizes) : product.productSizes;
       product.productCategory = productCategory || product.productCategory;
       product.productQuantity = parseInt(productQuantity) || product.productQuantity;
-      product.productStatus =
-        productStatus !== undefined
-          ? productStatus === "true"
-          : product.productStatus;
-      product.productDiscount = productDiscount
-        ? parseFloat(productDiscount)
-        : product.productDiscount;
+      product.productStatus = productStatus === "true" || product.productStatus;
+      product.productDiscount = productDiscount ? parseFloat(productDiscount) : product.productDiscount;
       product.productDiscountPrice = calculatedDiscountPrice;
       product.productDiscountPercentage = discountPercentage;
       product.productDiscountStartDate = discountStartDate;
@@ -163,31 +151,25 @@ class ProductController {
       product.hasActiveDiscount = hasActiveDiscount;
       product.NEW = isNew;
       product.newUntil = newUntil;
-
-      // رفع الصورة الرئيسية الجديدة إذا وجدت
-      const mainImage = req.files?.find((f) => f.fieldname === "productImage");
+  
+      // الصورة الرئيسية (إجباري رفعها مع التعديل)
+      const mainImage = req.files.find((f) => f.fieldname === "productImage");
       if (mainImage) {
-        // حذف الصورة القديمة
-        if (product.productImage) {
-          const oldImageId = product.productImage.split('/').pop().split('.')[0];
-          await deleteFromCloudinary(oldImageId, 'products');
-        }
-        
-        const mainImageResult = await uploadToCloudinary(mainImage.path, 'products');
+        const mainImageResult = await uploadToCloudinary(mainImage.buffer, 'products');
         product.productImage = mainImageResult.url;
       }
-
-      // رفع الصور الإضافية الجديدة إذا وجدت
-      const otherImages = req.files?.filter((f) => f.fieldname === "productImages") || [];
+  
+      // الصور الإضافية
+      const otherImages = req.files.filter((f) => f.fieldname === "productImages");
       if (otherImages.length > 0) {
         const otherImageResults = await Promise.all(
-          otherImages.map(img => uploadToCloudinary(img.path, 'products'))
+          otherImages.map((img) => uploadToCloudinary(img.buffer, 'products'))
         );
-        product.productImages = [...product.productImages, ...otherImageResults.map(result => result.url)];
+        product.productImages.push(...otherImageResults.map((r) => r.url));
       }
-
+  
       await product.save();
-
+  
       res.status(200).json({
         success: true,
         message: "Product updated successfully",
@@ -197,7 +179,8 @@ class ProductController {
       console.error("Error updating product:", error);
       next(new AppError("Failed to update product", 500));
     }
-  } 
+  }
+  
 
   async createProduct(req, res, next) {
     try {
@@ -293,18 +276,18 @@ class ProductController {
       const mainImage = req.files.find((f) => f.fieldname === "productImage");
       if (!mainImage) return next(new AppError("Main product image is required", 400));
       
-      const mainImageResult = await uploadToCloudinary(mainImage.path, 'products');
+      const mainImageResult = await uploadToCloudinary(mainImage.buffer, 'products');
       productData.productImage = mainImageResult.url;
-
-      // رفع الصور الإضافية
+      
+      // الصور الإضافية
       const otherImages = req.files.filter((f) => f.fieldname === "productImages");
       if (otherImages.length > 0) {
         const otherImageResults = await Promise.all(
-          otherImages.map(img => uploadToCloudinary(img.path, 'products'))
+          otherImages.map(img => uploadToCloudinary(img.buffer, 'products'))
         );
         productData.productImages = otherImageResults.map(result => result.url);
       }
-
+      
       const product = await Product.create(productData);
 
       res.status(201).json({

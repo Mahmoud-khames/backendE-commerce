@@ -61,14 +61,18 @@ class User {
 
         // معالجة الصورة إذا تم تحميلها
         if (req.files && req.files.length > 0) {
-          const userImageFile = req.files.find(
-            (f) => f.fieldname === "userImage"
-          );
+          const userImageFile = req.files.find((f) => f.fieldname === "userImage");
           if (userImageFile) {
-            const result = await uploadToCloudinary(userImageFile.path, 'users');
-            newUser.userImage = result.url;
+            try {
+              const result = await uploadToCloudinary(userImageFile.path, 'users');
+              newUser.userImage = result.url;
+            } catch (err) {
+              console.error("Image upload error:", err);
+              return next(new AppError("Failed to upload user image", 500));
+            }
           }
         }
+        
 
         await newUser.save();
 
@@ -117,18 +121,22 @@ class User {
       // معالجة الصورة إذا تم تحميلها
       console.log(req.files);
       if (req.files && req.files.length > 0) {
-        const userImageFile = req.files.find(
-          (f) => f.fieldname === "userImage"
-        );
-        console.log(userImageFile);
+        const userImageFile = req.files.find((f) => f.fieldname === "userImage");
         if (userImageFile) {
-          // حذف الصورة القديمة إذا وجدت
-          if (user.userImage) {
-            const oldImageId = user.userImage.split('/').pop().split('.')[0];
-            await deleteFromCloudinary(oldImageId, 'users');
+          try {
+            // حذف الصورة القديمة من Cloudinary إن وجدت
+            if (user.userImage && user.userImage.includes('res.cloudinary.com')) {
+              const publicId = user.userImage.split('/').pop().split('.')[0];
+              await deleteFromCloudinary(publicId, 'users');
+            }
+      
+            // رفع الصورة الجديدة
+            const result = await uploadToCloudinary(userImageFile.path, 'users');
+            updateData.userImage = result.url;
+          } catch (err) {
+            console.error("Image upload error:", err);
+            return next(new AppError("Failed to upload user image", 500));
           }
-          const result = await uploadToCloudinary(userImageFile.path, 'users');
-          updateData.userImage = result.url;
         }
       }
 

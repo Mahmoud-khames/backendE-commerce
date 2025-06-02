@@ -148,43 +148,47 @@ class CategoryController {
 
   async uploadCategoryImage(req, res, next) {
     const { id } = req.params;
-    
+  
     try {
       if (!req.file) {
         return next(new AppError("No image provided", 400));
       }
-      
+  
       const category = await categoryModel.findById(id);
       if (!category) {
         return next(new AppError("Category not found", 404));
       }
-      
-      // Delete old image if exists
+  
+      // حذف الصورة القديمة من Cloudinary إن وُجدت
       if (category.image) {
-        const oldImageId = category.image.split('/').pop();
-        await cloudinary.uploader.destroy(`categories/${oldImageId}`);
+        const publicId = category.image
+          .split('/')
+          .slice(-1)[0] // last segment
+          .split('.')[0]; // remove file extension
+        await deleteFromCloudinary(`categories/${publicId}`);
       }
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: 'categories'
-      });
-      const imageUrl = `/backend/uploads/categories/${result.public_id}`;
-      
+  
+      // رفع الصورة الجديدة
+      const result = await uploadToCloudinary(req.file.path, 'categories');
+  
+      // تحديث الفئة
       const updatedCategory = await categoryModel.findByIdAndUpdate(
         id,
-        { image: imageUrl },
+        { image: result.url },
         { new: true }
       );
-      
+  
       return res.status(200).json({
         success: true,
         message: "Category image uploaded successfully",
         category: updatedCategory,
       });
     } catch (error) {
-      console.log(error);
+      console.error(error);
       return next(new AppError("Failed to upload category image", 500));
     }
   }
+  
 }
 
 module.exports = new CategoryController();

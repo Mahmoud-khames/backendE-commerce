@@ -2,7 +2,7 @@ const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
-
+const streamifier = require("streamifier");
 // تكوين Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -10,46 +10,38 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+
+
 /**
- * رفع ملف إلى Cloudinary
- * @param {string} filePath - مسار الملف المحلي
- * @param {string} folder - اسم المجلد في Cloudinary (مثل products, categories, users)
- * @param {string} resourceType - نوع المورد (image, video, raw)
- * @returns {Promise<object>} - نتيجة الرفع من Cloudinary
+ * رفع Buffer إلى Cloudinary مباشرة
+ * @param {Buffer} buffer - بيانات الصورة في شكل buffer
+ * @param {string} folder - اسم المجلد
+ * @param {string} resourceType - نوع المورد
+ * @returns {Promise<object>}
  */
-const uploadToCloudinary = async (filePath, folder = 'general', resourceType = 'image') => {
-  try {
-    // إنشاء اسم فريد للملف باستخدام هاش
-    const fileName = path.basename(filePath);
-    const fileHash = crypto.createHash('md5').update(fileName + Date.now()).digest('hex').substring(0, 10);
-    const publicId = `${folder}/${fileHash}`;
+const uploadToCloudinary  = (buffer, folder = 'general', resourceType = 'image') => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: resourceType,
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+          format: result.format
+        });
+      }
+    );
 
-    // رفع الملف إلى Cloudinary
-    const result = await cloudinary.uploader.upload(filePath, {
-      resource_type: resourceType,
-      public_id: publicId,
-      folder: folder,
-      overwrite: true
-    });
-
-    // حذف الملف المؤقت بعد الرفع
-    fs.unlinkSync(filePath);
-    
-    return {
-      url: result.secure_url,
-      publicId: result.public_id,
-      width: result.width,
-      height: result.height,
-      format: result.format
-    };
-  } catch (error) {
-    // حذف الملف المؤقت في حالة فشل الرفع
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    throw error;
-  }
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
 };
+
 
 /**
  * حذف ملف من Cloudinary
