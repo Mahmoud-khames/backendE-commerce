@@ -2,6 +2,7 @@ const path = require("path");
 const userModel = require("../models/userModel");
 const bcrypt = require("bcryptjs");
 const AppError = require("../utils/AppError");
+const { uploadToCloudinary, deleteFromCloudinary } = require("../utils/cloudinaryUpload");
 
 class User {
   async getAllUser(req, res, next) {
@@ -64,7 +65,8 @@ class User {
             (f) => f.fieldname === "userImage"
           );
           if (userImageFile) {
-            newUser.userImage = `/backend/uploads/users/${userImageFile.filename}`;
+            const result = await uploadToCloudinary(userImageFile.path, 'users');
+            newUser.userImage = result.url;
           }
         }
 
@@ -90,7 +92,7 @@ class User {
       if (!firstName || !lastName || !email) {
         return next(new AppError("Name and email are required", 400));
       }
-console.log(req.body);
+      console.log(req.body);
       // البحث عن المستخدم
       const user = await userModel.findById(uId);
       if (!user) {
@@ -103,7 +105,7 @@ console.log(req.body);
         lastName,
         email,
         phone,
-        role: role ,
+        role: role,
       };
 
       // تحديث كلمة المرور فقط إذا تم تقديمها وليست "currentpassword"
@@ -113,14 +115,20 @@ console.log(req.body);
       }
 
       // معالجة الصورة إذا تم تحميلها
-     console.log(req.files);
+      console.log(req.files);
       if (req.files && req.files.length > 0) {
         const userImageFile = req.files.find(
           (f) => f.fieldname === "userImage"
         );
         console.log(userImageFile);
         if (userImageFile) {
-          updateData.userImage = `/backend/uploads/users/${userImageFile.filename}`;
+          // حذف الصورة القديمة إذا وجدت
+          if (user.userImage) {
+            const oldImageId = user.userImage.split('/').pop().split('.')[0];
+            await deleteFromCloudinary(oldImageId, 'users');
+          }
+          const result = await uploadToCloudinary(userImageFile.path, 'users');
+          updateData.userImage = result.url;
         }
       }
 

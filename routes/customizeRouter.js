@@ -6,10 +6,10 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// تكوين تخزين الصور
+// تكوين تخزين الصور (مؤقتًا قبل الرفع إلى Cloudinary)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../public/uploads/customize");
+    const uploadPath = path.join(__dirname, "../public/uploads/temp");
     fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },

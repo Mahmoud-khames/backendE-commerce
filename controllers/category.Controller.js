@@ -1,9 +1,8 @@
 const categoryModel = require("../models/categoryModel");
 const AppError = require("../utils/AppError");
-const fs = require("fs");
-const path = require("path");
+const { uploadToCloudinary, deleteFromCloudinary } = require("../utils/cloudinaryUpload");
 
-class Category {
+class CategoryController {
   async getAllCategories(req, res, next) {
     try {
       const categories = await categoryModel
@@ -40,9 +39,7 @@ class Category {
 
   async createCategory(req, res, next) {
     const { name, description, status } = req.body;
-    if (!name || !description) {
-      return next(new AppError("Name and description are required", 400));
-    }
+    
     try {
       let slug = name.toLowerCase().replace(/ /g, "-");
       const existingCategory = await categoryModel.findOne({ slug });
@@ -57,9 +54,10 @@ class Category {
         status: status === "true" || status === true,
       };
 
-      // Handle image upload
+      // رفع صورة الفئة
       if (req.file) {
-        categoryData.image = `/backend/uploads/categories/${req.file.filename}`;
+        const result = await uploadToCloudinary(req.file.path, 'categories');
+        categoryData.image = result.url;
       } else {
         return next(new AppError("Category image is required", 400));
       }
@@ -81,48 +79,27 @@ class Category {
     const { id } = req.params;
     const { name, description, status } = req.body;
     
-    if (!name || !description) {
-      return next(new AppError("Name and description are required", 400));
-    }
-    
     try {
       const category = await categoryModel.findById(id);
       if (!category) {
         return next(new AppError("Category not found", 404));
       }
 
-      // Prepare update data
-      const updateData = {
-        name,
-        description,
-        status: status === "true" || status === true,
-      };
+      const updateData = {};
+      if (name) updateData.name = name;
+      if (description) updateData.description = description;
+      if (status !== undefined) updateData.status = status === "true" || status === true;
 
-      // If name changed, update slug
-      if (name !== category.name) {
-        updateData.slug = name.toLowerCase().replace(/ /g, "-");
-        
-        // Check if new slug already exists
-        const existingCategory = await categoryModel.findOne({ 
-          slug: updateData.slug,
-          _id: { $ne: id } // Exclude current category
-        });
-        
-        if (existingCategory) {
-          return next(new AppError("Category with this name already exists", 400));
-        }
-      }
-
-      // Handle image upload
+      // رفع صورة الفئة الجديدة إذا وجدت
       if (req.file) {
-        // Delete old image if exists
+        // حذف الصورة القديمة
         if (category.image) {
-          const oldImagePath = path.join(__dirname, "../public", category.image);
-          if (fs.existsSync(oldImagePath)) {
-            fs.unlinkSync(oldImagePath);
-          }
+          const oldImageId = category.image.split('/').pop().split('.')[0];
+          await deleteFromCloudinary(oldImageId, 'categories');
         }
-        updateData.image = `/backend/uploads/categories/${req.file.filename}`;
+        
+        const result = await uploadToCloudinary(req.file.path, 'categories');
+        updateData.image = result.url;
       }
 
       const updatedCategory = await categoryModel.findByIdAndUpdate(
@@ -144,21 +121,24 @@ class Category {
 
   async deleteCategory(req, res, next) {
     const { id } = req.params;
+    
     try {
-      const category = await categoryModel.findByIdAndUpdate(
-        id,
-        { isDeleted: true },
-        { new: true }
-      );
-      
+      const category = await categoryModel.findById(id);
       if (!category) {
         return next(new AppError("Category not found", 404));
       }
-      
+
+      // حذف صورة الفئة من Cloudinary
+      if (category.image) {
+        const imageId = category.image.split('/').pop().split('.')[0];
+        await deleteFromCloudinary(imageId, 'categories');
+      }
+
+      await categoryModel.findByIdAndDelete(id);
+
       return res.status(200).json({
         success: true,
         message: "Category deleted successfully",
-        category,
       });
     } catch (error) {
       console.log(error);
@@ -181,13 +161,13 @@ class Category {
       
       // Delete old image if exists
       if (category.image) {
-        const oldImagePath = path.join(__dirname, "../public", category.image);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+        const oldImageId = category.image.split('/').pop();
+        await cloudinary.uploader.destroy(`categories/${oldImageId}`);
       }
-      
-      const imageUrl = `/backend/uploads/categories/${req.file.filename}`;
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'categories'
+      });
+      const imageUrl = `/backend/uploads/categories/${result.public_id}`;
       
       const updatedCategory = await categoryModel.findByIdAndUpdate(
         id,
@@ -207,5 +187,4 @@ class Category {
   }
 }
 
-const categoryController = new Category();
-module.exports = categoryController;
+module.exports = new CategoryController();

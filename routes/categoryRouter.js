@@ -6,10 +6,10 @@ const path = require("path");
 const fs = require("fs");
 const { authMiddleware, isAdmin } = require("../middlewares/authMiddleware");
 
-// تكوين تخزين الصور
+// تكوين تخزين الصور (مؤقتًا قبل الرفع إلى Cloudinary)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../public/uploads/categories");
+    const uploadPath = path.join(__dirname, "../public/uploads/temp");
     fs.mkdirSync(uploadPath, { recursive: true }); // التأكد من وجود المجلد
     cb(null, uploadPath);
   },

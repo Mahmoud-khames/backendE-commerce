@@ -1,6 +1,8 @@
 const reviewModel = require("../models/reviewsModel");
 const AppError = require("../utils/AppError");
 const mongoose = require('mongoose');
+const { uploadToCloudinary, deleteFromCloudinary } = require("../utils/cloudinaryUpload");
+
 class ReviewController {
   async getAllReviews(req, res, next) {
     const reviews = await reviewModel.find({});
@@ -119,27 +121,69 @@ class ReviewController {
       if (!req.file) {
         return next(new AppError("No image uploaded", 400));
       }
+
+      // رفع الصورة إلى Cloudinary
+      const result = await uploadToCloudinary(req.file.path, 'reviews');
       
-      const imagePath = `/backend/uploads/reviews/${req.file.filename}`;
-      
+      // تحديث المراجعة بالصورة الجديدة
       const review = await reviewModel.findByIdAndUpdate(
         reviewId,
-        { $push: { images: imagePath } },
+        { $push: { images: result.url } },
         { new: true }
       );
       
-      if (review) {
-        return res.json({ 
-          success: true, 
-          message: "Review image uploaded successfully",
-          image: imagePath
-        });
-      } else {
-        return next(new AppError("Failed to upload review image", 500));
+      if (!review) {
+        return next(new AppError("Review not found", 404));
       }
+
+      return res.status(200).json({ 
+        success: true, 
+        message: "Review image uploaded successfully",
+        image: result.url
+      });
+      
     } catch (error) {
-      console.log(error);
-      return next(new AppError("Failed to upload review image", 500));
+      console.error("Upload error:", error);
+      return next(new AppError(`Failed to upload image: ${error.message}`, 500));
+    }
+  }
+
+  async deleteReviewImage(req, res, next) {
+    try {
+      const { reviewId, imageIndex } = req.body;
+      
+      const review = await reviewModel.findById(reviewId);
+      if (!review) {
+        return next(new AppError("Review not found", 404));
+      }
+      
+      if (imageIndex < 0 || imageIndex >= review.images.length) {
+        return next(new AppError("Invalid image index", 400));
+      }
+      
+      // استخراج المسار وحذف الصورة من Cloudinary
+      const imageUrl = review.images[imageIndex];
+      const publicId = imageUrl.split('/').pop().split('.')[0];
+      
+      if (publicId) {
+        try {
+          await deleteFromCloudinary(publicId, 'reviews');
+        } catch (err) {
+          console.error("Error deleting from Cloudinary:", err);
+        }
+      }
+      
+      // حذف الصورة من المصفوفة
+      review.images.splice(imageIndex, 1);
+      await review.save();
+      
+      return res.status(200).json({
+        success: true,
+        message: "Review image deleted successfully"
+      });
+    } catch (error) {
+      console.error("Error deleting image:", error);
+      return next(new AppError("Failed to delete image", 500));
     }
   }
 }

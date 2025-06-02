@@ -2,22 +2,22 @@ const fs = require("fs");
 const path = require("path");
 const Product = require("../models/productModel");
 const AppError = require("../utils/AppError");
+const { uploadToCloudinary, deleteFromCloudinary, uploadMultipleToCloudinary } = require("../utils/cloudinaryUpload");
 
 class ProductController {
-  // Delete image files from disk
-  static deleteImages(images) {
+  // حذف الصور من Cloudinary
+  static async deleteImages(images) {
     if (!Array.isArray(images)) return;
 
-    images.forEach((image) => {
+    await Promise.all(images.map(async (image) => {
       try {
-        const filePath = path.join(__dirname, "../public/uploads/products", image);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
+        // استخراج معرف الصورة من URL
+        const publicId = image.split('/').pop().split('.')[0];
+        await deleteFromCloudinary(publicId, 'products');
       } catch (error) {
         console.error(`Failed to delete image ${image}:`, error);
       }
-    });
+    }));
   }
 
   // تحديث حالة المنتجات الجديدة والخصومات
@@ -96,127 +96,106 @@ class ProductController {
       const product = await Product.findOne({ productSlug: slug });
       if (!product) return next(new AppError("Product not found", 404));
 
-      // Calculate discount price if percentage is provided
-      let calculatedDiscountPrice = 0;
-      let hasActiveDiscount = false;
-      
-      if (productDiscountPercentage && parseFloat(productDiscountPercentage) > 0) {
-        calculatedDiscountPrice =
-          parseFloat(productPrice) -
-          parseFloat(productPrice) * (parseFloat(productDiscountPercentage) / 100);
-        
-        // Check if discount is active based on dates
-        if (productDiscountStartDate && productDiscountEndDate) {
-          const now = new Date();
-          const startDate = new Date(productDiscountStartDate);
-          const endDate = new Date(productDiscountEndDate);
-          hasActiveDiscount = now >= startDate && now <= endDate;
-        }
+      // حذف الصور المحددة
+      const imagesToDelete = JSON.parse(deletedImages);
+      if (imagesToDelete.length > 0) {
+        await ProductController.deleteImages(imagesToDelete);
+        product.productImages = product.productImages.filter(
+          (img) => !imagesToDelete.includes(img)
+        );
       }
 
-      // Update product data
-      product.productName = productName;
-      product.productDescription = productDescription;
-      product.productPrice = parseFloat(productPrice);
-      product.oldProductPrice = oldProductPrice ? parseFloat(oldProductPrice) : 0;
-      product.productCategory = productCategory;
-      product.productQuantity = parseInt(productQuantity) || 0;
-      product.productStatus = productStatus === "true" || productStatus === true;
-      
-      // Update discount fields
-      product.productDiscount = productDiscount ? parseFloat(productDiscount) : 0;
-      product.productDiscountPrice = calculatedDiscountPrice || 0;
-      product.productDiscountPercentage = productDiscountPercentage
+      // حساب سعر الخصم وحالة الخصم
+      const discountPercentage = productDiscountPercentage
         ? parseFloat(productDiscountPercentage)
         : 0;
-      product.productDiscountStartDate = productDiscountStartDate
+      const price = parseFloat(productPrice) || product.productPrice;
+      const calculatedDiscountPrice =
+        discountPercentage > 0 ? price - (price * (discountPercentage / 100)) : 0;
+
+      const now = new Date();
+      const discountStartDate = productDiscountStartDate
         ? new Date(productDiscountStartDate)
-        : null;
-      product.productDiscountEndDate = productDiscountEndDate
+        : product.productDiscountStartDate;
+      const discountEndDate = productDiscountEndDate
         ? new Date(productDiscountEndDate)
-        : null;
+        : product.productDiscountEndDate;
+
+      const hasActiveDiscount =
+        discountPercentage > 0 &&
+        discountStartDate &&
+        discountEndDate &&
+        now >= discountStartDate &&
+        now <= discountEndDate;
+
+      // تعيين حالة المنتج الجديد
+      const isNew = NEW === "true" || NEW === true;
+      const newUntil = isNew
+        ? new Date(now.getTime() + 24 * 60 * 60 * 1000)
+        : product.newUntil;
+
+      // تحديث بيانات المنتج
+      product.productName = productName || product.productName;
+      product.productDescription = productDescription || product.productDescription;
+      product.productPrice = parseFloat(productPrice) || product.productPrice;
+      product.oldProductPrice = oldProductPrice
+        ? parseFloat(oldProductPrice)
+        : product.oldProductPrice;
+      product.productColors = productColors
+        ? JSON.parse(productColors)
+        : product.productColors;
+      product.productSizes = productSizes
+        ? JSON.parse(productSizes)
+        : product.productSizes;
+      product.productCategory = productCategory || product.productCategory;
+      product.productQuantity = parseInt(productQuantity) || product.productQuantity;
+      product.productStatus =
+        productStatus !== undefined
+          ? productStatus === "true"
+          : product.productStatus;
+      product.productDiscount = productDiscount
+        ? parseFloat(productDiscount)
+        : product.productDiscount;
+      product.productDiscountPrice = calculatedDiscountPrice;
+      product.productDiscountPercentage = discountPercentage;
+      product.productDiscountStartDate = discountStartDate;
+      product.productDiscountEndDate = discountEndDate;
       product.hasActiveDiscount = hasActiveDiscount;
+      product.NEW = isNew;
+      product.newUntil = newUntil;
 
-      // Update NEW status if provided
-      if (NEW !== undefined) {
-        product.NEW = NEW === "true" || NEW === true;
-        if (product.NEW) {
-          product.newUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        } else {
-          product.newUntil = null;
+      // رفع الصورة الرئيسية الجديدة إذا وجدت
+      const mainImage = req.files?.find((f) => f.fieldname === "productImage");
+      if (mainImage) {
+        // حذف الصورة القديمة
+        if (product.productImage) {
+          const oldImageId = product.productImage.split('/').pop().split('.')[0];
+          await deleteFromCloudinary(oldImageId, 'products');
         }
+        
+        const mainImageResult = await uploadToCloudinary(mainImage.path, 'products');
+        product.productImage = mainImageResult.url;
       }
 
-      // Process colors and sizes
-      if (productColors) {
-        try {
-          product.productColors = JSON.parse(productColors);
-        } catch (error) {
-          console.error("Error parsing colors:", error);
-          product.productColors = [];
-        }
+      // رفع الصور الإضافية الجديدة إذا وجدت
+      const otherImages = req.files?.filter((f) => f.fieldname === "productImages") || [];
+      if (otherImages.length > 0) {
+        const otherImageResults = await Promise.all(
+          otherImages.map(img => uploadToCloudinary(img.path, 'products'))
+        );
+        product.productImages = [...product.productImages, ...otherImageResults.map(result => result.url)];
       }
 
-      if (productSizes) {
-        try {
-          product.productSizes = JSON.parse(productSizes);
-        } catch (error) {
-          console.error("Error parsing sizes:", error);
-          product.productSizes = [];
-        }
-      }
-
-      // Handle deleted images
-      try {
-        const imagesToDelete = JSON.parse(deletedImages);
-        if (Array.isArray(imagesToDelete) && imagesToDelete.length > 0) {
-          // Remove from database
-          product.productImages = product.productImages.filter(
-            (img) => !imagesToDelete.includes(img)
-          );
-          
-          // Delete files from disk
-          ProductController.deleteImages(imagesToDelete);
-        }
-      } catch (error) {
-        console.error("Error processing deleted images:", error);
-      }
-
-      // Handle new main image
-      if (req.files && req.files.length > 0) {
-        const mainImage = req.files.find((f) => f.fieldname === "productImage");
-        if (mainImage) {
-          // Delete old main image if exists
-          if (product.productImage) {
-            const oldImagePath = product.productImage.split("/").pop();
-            ProductController.deleteImages([oldImagePath]);
-          }
-          product.productImage =
-            `/backend/uploads/products/${mainImage.filename}`;
-        }
-
-        const productImagesFiles = req.files.filter(f => f.fieldname === "productImages");
-        if (productImagesFiles.length > 0) {
-          const newImages = productImagesFiles.map(f => `/backend/uploads/products/${f.filename}`);
-          await Product.updateOne({ productSlug: slug }, {
-            $push: { productImages: { $each: newImages } },
-          });
-        }
-      }
-
-      const updatedProduct = await Product.findOneAndUpdate({ productSlug: slug }, product, {
-        new: true,
-        runValidators: true,
-      });
+      await product.save();
 
       res.status(200).json({
         success: true,
         message: "Product updated successfully",
-        product: updatedProduct,
+        data: product,
       });
     } catch (error) {
-      console.error("Error editing product:", error);
-      next(new AppError(error.message, 500));
+      console.error("Error updating product:", error);
+      next(new AppError("Failed to update product", 500));
     }
   } 
 
@@ -241,7 +220,7 @@ class ProductController {
 
       if (!productName?.trim()) return next(new AppError("Product name is required", 400));
 
-      // Generate unique slug
+      // إنشاء slug فريد
       const baseSlug = productName
         .toLowerCase()
         .normalize("NFD")
@@ -256,27 +235,32 @@ class ProductController {
         slug = `${baseSlug}-${counter++}`;
       }
 
-      // Calculate discount price if percentage is provided
-      let calculatedDiscountPrice = 0;
-      let hasActiveDiscount = false;
-      
-      if (productDiscountPercentage && parseFloat(productDiscountPercentage) > 0) {
-        calculatedDiscountPrice =
-          parseFloat(productPrice) -
-          parseFloat(productPrice) * (parseFloat(productDiscountPercentage) / 100);
-        
-        // Check if discount is active based on dates
-        if (productDiscountStartDate && productDiscountEndDate) {
-          const now = new Date();
-          const startDate = new Date(productDiscountStartDate);
-          const endDate = new Date(productDiscountEndDate);
-          hasActiveDiscount = now >= startDate && now <= endDate;
-        }
-      }
+      // حساب سعر الخصم وحالة الخصم
+      const discountPercentage = productDiscountPercentage
+        ? parseFloat(productDiscountPercentage)
+        : 0;
+      const price = parseFloat(productPrice) || 0;
+      const calculatedDiscountPrice =
+        discountPercentage > 0 ? price - (price * (discountPercentage / 100)) : 0;
 
-      // Set NEW status and expiration (default to true for new products)
-      const isNew = NEW !== undefined ? (NEW === "true" || NEW === true) : true;
-      const newUntil = isNew ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null;
+      const now = new Date();
+      const discountStartDate = productDiscountStartDate
+        ? new Date(productDiscountStartDate)
+        : null;
+      const discountEndDate = productDiscountEndDate
+        ? new Date(productDiscountEndDate)
+        : null;
+
+      const hasActiveDiscount =
+        discountPercentage > 0 &&
+        discountStartDate &&
+        discountEndDate &&
+        now >= discountStartDate &&
+        now <= discountEndDate;
+
+      // تعيين حالة المنتج الجديد
+      const isNew = NEW === "true" || NEW === true;
+      const newUntil = isNew ? new Date(now.getTime() + 24 * 60 * 60 * 1000) : null;
 
       const productData = {
         productName,
@@ -293,15 +277,9 @@ class ProductController {
         productImages: [],
         productDiscount: productDiscount ? parseFloat(productDiscount) : 0,
         productDiscountPrice: calculatedDiscountPrice,
-        productDiscountPercentage: productDiscountPercentage
-          ? parseFloat(productDiscountPercentage)
-          : 0,
-        productDiscountStartDate: productDiscountStartDate
-          ? new Date(productDiscountStartDate)
-          : null,
-        productDiscountEndDate: productDiscountEndDate
-          ? new Date(productDiscountEndDate)
-          : null,
+        productDiscountPercentage: discountPercentage,
+        productDiscountStartDate: discountStartDate,
+        productDiscountEndDate: discountEndDate,
         hasActiveDiscount,
         NEW: isNew,
         newUntil,
@@ -311,25 +289,32 @@ class ProductController {
         return next(new AppError("Product image is required", 400));
       }
 
+      // رفع الصورة الرئيسية
       const mainImage = req.files.find((f) => f.fieldname === "productImage");
       if (!mainImage) return next(new AppError("Main product image is required", 400));
-      productData.productImage = `/backend/uploads/products/${mainImage.filename}`;
+      
+      const mainImageResult = await uploadToCloudinary(mainImage.path, 'products');
+      productData.productImage = mainImageResult.url;
 
+      // رفع الصور الإضافية
       const otherImages = req.files.filter((f) => f.fieldname === "productImages");
-      productData.productImages = otherImages.map(
-        (f) => `/backend/uploads/products/${f.filename}`
-      );
+      if (otherImages.length > 0) {
+        const otherImageResults = await Promise.all(
+          otherImages.map(img => uploadToCloudinary(img.path, 'products'))
+        );
+        productData.productImages = otherImageResults.map(result => result.url);
+      }
 
-      const newProduct = new Product(productData);
-      await newProduct.save();
+      const product = await Product.create(productData);
 
-      res.status(200).json({
+      res.status(201).json({
         success: true,
         message: "Product created successfully",
-        product: newProduct,
+        data: product,
       });
     } catch (error) {
-      next(new AppError(`Failed to create product: ${error.message}`, 500));
+      console.error("Error creating product:", error);
+      next(new AppError("Failed to create product", 500));
     }
   }
 
@@ -594,7 +579,11 @@ class ProductController {
       const { productId } = req.params;
       if (!req.file) return next(new AppError("No image provided", 400));
 
-      const imageUrl = `/backend/uploads/products/${req.file.filename}`;
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'products'
+      });
+      
+      const imageUrl = `/backend/uploads/products/${result.public_id}`;
       const product = await Product.findByIdAndUpdate(
         productId,
         { productImage: imageUrl },
@@ -609,6 +598,7 @@ class ProductController {
         product,
       });
     } catch (error) {
+      console.error("Cloudinary upload error:", error);
       next(new AppError("Failed to upload product image", 500));
     }
   }

@@ -1,4 +1,5 @@
 const customizeModel = require("../models/customizeModel");
+const { uploadToCloudinary, deleteFromCloudinary, uploadMultipleToCloudinary } = require("../utils/cloudinaryUpload");
 const fs = require("fs");
 const path = require("path");
 
@@ -52,10 +53,12 @@ class Customize {
         });
       }
 
-      // تحضير مسارات الصور
-      const slideImages = req.files.map(
-        (file) => `/backend/uploads/customize/${file.filename}`
+      // رفع الصور إلى Cloudinary
+      const uploadResults = await Promise.all(
+        req.files.map(file => uploadToCloudinary(file.path, 'customize'))
       );
+      
+      const slideImages = uploadResults.map(result => result.url);
 
       // إنشاء تخصيص جديد
       const customize = await customizeModel.create({
@@ -100,7 +103,8 @@ class Customize {
       }
 
       console.log("File uploaded:", req.file);
-      const imagePath = `/backend/uploads/customize/${req.file.filename}`;
+      const result = await uploadToCloudinary(req.file.path, 'customize');
+      const imagePath = result.url;
 
       // البحث عن تخصيص موجود أو إنشاء واحد جديد
       let customize = await customizeModel.findOne({});
@@ -120,14 +124,13 @@ class Customize {
         success: true,
         message: "Image uploaded successfully",
         image: imagePath,
-        customize,
       });
-    } catch (err) {
-      console.log(err);
+    } catch (error) {
+      console.error("Error uploading image:", error);
       return res.status(500).json({
         success: false,
-        message: "Server error",
-        error: err.message,
+        message: "Error uploading image",
+        error: error.message,
       });
     }
   }
@@ -136,17 +139,8 @@ class Customize {
   async deleteSlideImage(req, res) {
     try {
       const { id, imageIndex } = req.body;
-
-      if (!id || imageIndex === undefined) {
-        return res.status(400).json({
-          success: false,
-          message: "Customize ID and image index are required",
-        });
-      }
-
-      // البحث عن التخصيص
+      
       const customize = await customizeModel.findById(id);
-
       if (!customize) {
         return res.status(404).json({
           success: false,
@@ -154,7 +148,6 @@ class Customize {
         });
       }
 
-      // التأكد من أن الفهرس صالح
       if (imageIndex < 0 || imageIndex >= customize.slideImage.length) {
         return res.status(400).json({
           success: false,
@@ -162,35 +155,31 @@ class Customize {
         });
       }
 
-      // تحديد مسار الصورة المراد حذفها
-      const imagePath = customize.slideImage[imageIndex];
-      const filePath = path.join(__dirname, "../../public", imagePath); // Corrected path
+      // استخراج المسار وحذف الصورة من Cloudinary
+      const imageUrl = customize.slideImage[imageIndex];
+      const publicId = imageUrl.split('/').pop().split('.')[0];
+      
+      if (publicId) {
+        try {
+          await deleteFromCloudinary(publicId, 'customize');
+        } catch (err) {
+          console.error("Error deleting from Cloudinary:", err);
+        }
+      }
 
-      // إزالة الصورة من المصفوفة
+      // حذف الصورة من المصفوفة
       customize.slideImage.splice(imageIndex, 1);
       await customize.save();
-
-      // حذف الملف من النظام إن وجد
-      if (fs.existsSync(filePath)) {
-        fs.unlink(filePath, (err) => {
-          if (err) {
-            console.error("Failed to delete image file:", err);
-          } else {
-            console.log("Deleted image file:", filePath);
-          }
-        });
-      }
 
       return res.status(200).json({
         success: true,
         message: "Image deleted successfully",
-        customize,
       });
     } catch (error) {
-      console.error("Error deleting slide image:", error);
+      console.error("Error deleting image:", error);
       return res.status(500).json({
         success: false,
-        message: "Server error",
+        message: "Error deleting image",
         error: error.message,
       });
     }
@@ -228,9 +217,11 @@ class Customize {
 
       // إضافة صور جديدة إذا وجدت
       if (req.files && req.files.length > 0) {
-        const newImages = req.files.map(
-          (file) => `/backend/uploads/customize/${file.filename}`
+        const uploadResults = await Promise.all(
+          req.files.map(file => uploadToCloudinary(file.path, 'customize'))
         );
+        
+        const newImages = uploadResults.map(result => result.url);
         updateData.slideImage = [...customize.slideImage, ...newImages];
       }
 
@@ -274,11 +265,15 @@ class Customize {
         });
       }
 
-      // حذف جميع الصور من المجلد
-      for (const imagePath of customize.slideImage) {
-        const fullPath = path.join(__dirname, "../public", imagePath);
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
+      // حذف جميع الصور من Cloudinary
+      for (const imageUrl of customize.slideImage) {
+        const publicId = imageUrl.split('/').pop().split('.')[0];
+        if (publicId) {
+          try {
+            await deleteFromCloudinary(publicId, 'customize');
+          } catch (err) {
+            console.error("Error deleting from Cloudinary:", err);
+          }
         }
       }
 

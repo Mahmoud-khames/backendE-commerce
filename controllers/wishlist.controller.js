@@ -12,7 +12,7 @@ const getWishlist = async (req, res) => {
     let wishlist = await Wishlist.findOne({ user: userId }).populate({
       path: "products",
       select:
-        "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating",
+        "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating productSlug",
     });
 
     if (!wishlist) {
@@ -20,7 +20,7 @@ const getWishlist = async (req, res) => {
       wishlist = await wishlist.populate({
         path: "products",
         select:
-          "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating",
+          "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating productSlug",
       });
     }
 
