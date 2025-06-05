@@ -26,11 +26,11 @@ const upload = multer({
 
 // مسارات المستخدمين
 router.get("/", authMiddleware, isAdmin, userController.getAllUser);
-router.get("/:uId", authMiddleware, isAdmin, userController.getSingleUser);
+router.get("/:uId", authMiddleware, userController.getSingleUser);
 router.put(
   "/:uId",
   authMiddleware,
-  isAdmin,
+  
   upload.any(),
   userController.postEditUser
 );
