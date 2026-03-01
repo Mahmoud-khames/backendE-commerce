@@ -1,194 +1,294 @@
-const categoryModel = require("../models/categoryModel");
-const AppError = require("../utils/AppError");
-const { uploadToCloudinary, deleteFromCloudinary } = require("../utils/cloudinaryUpload");
+
+const CategoryService = require('../services/category.service');
+const AppError = require('../utils/AppError');
 
 class CategoryController {
+  // Helper للحصول على اللغة من الطلب
+  static getLang(req) {
+    return req.headers['accept-language']?.split(',')[0]?.split('-')[0] || 
+           req.query.lang || 
+           'en';
+  }
+
+  // Helper للاستجابة الناجحة
+  static successResponse(res, data, message = 'Success', statusCode = 200) {
+    return res.status(statusCode).json({
+      success: true,
+      message,
+      ...data
+    });
+  }
+
+  // ==================== Query Methods ====================
+
+  // الحصول على جميع الفئات
   async getAllCategories(req, res, next) {
     try {
-      const categories = await categoryModel
-        .find({ isDeleted: false })
-        .sort({ _id: -1 });
-      return res.status(200).json({
-        success: true,
-        message: "Categories fetched successfully",
-       data: categories,
-      });
-    } catch (error) {
-      console.log(error);
-      return next(new AppError("Failed to get categories", 500));
-    }
-  }
-
-  async getCategoryById(req, res, next) {
-    const { id } = req.params;
-    try {
-      const category = await categoryModel.findById(id);
-      if (!category) {
-        return next(new AppError("Category not found", 404));
-      }
-      return res.status(200).json({
-        success: true,
-        message: "Category fetched successfully",
-        category,
-      });
-    } catch (error) {
-      console.log(error);
-      return next(new AppError("Failed to get category", 500));
-    }
-  }
-
-  async createCategory(req, res, next) {
-    const { name, description, status } = req.body;
-    
-    try {
-      let slug = name.toLowerCase().replace(/ /g, "-");
-      const existingCategory = await categoryModel.findOne({ slug });
-      if (existingCategory) {
-        return next(new AppError("Category already exists", 400));
-      }
-
-      const categoryData = {
-        name,
-        description,
-        slug,
-        status: status === "true" || status === true,
-      };
-
-      // رفع صورة الفئة
-      if (req.file) {
-        const result = await uploadToCloudinary(req.file.path, 'categories');
-        categoryData.image = result.url;
-      } else {
-        return next(new AppError("Category image is required", 400));
-      }
-
-      const category = await categoryModel.create(categoryData);
+      const lang = CategoryController.getLang(req);
+      const categories = await CategoryService.getAllCategories(lang);
       
-      return res.status(201).json({
-        success: true,
-        message: "Category created successfully",
-        category,
-      });
+      return CategoryController.successResponse(res, { 
+        data: categories,
+        count: categories.length
+      }, lang === 'ar' ? 'تم جلب الفئات بنجاح' : 'Categories fetched successfully');
     } catch (error) {
-      console.log(error);
-      return next(new AppError("Failed to create category", 500));
+      console.error('Error fetching categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get categories', 500));
     }
   }
 
+  // الحصول على الفئات مع Pagination
+  async getCategories(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { result, keys } = await CategoryService.getCategories(req.query, lang);
+      
+      return CategoryController.successResponse(res, { 
+        data: result.data,
+        pagination: {
+          total: result.total,
+          page: result.page,
+          perPage: result.perPage,
+          totalPages: result.totalPages
+        },
+        keys
+      }, lang === 'ar' ? 'تم جلب الفئات بنجاح' : 'Categories fetched successfully');
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get categories', 500));
+    }
+  }
+
+  // الحصول على الفئات النشطة فقط
+  async getActiveCategories(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const categories = await CategoryService.getActiveCategories(lang);
+      
+      return CategoryController.successResponse(res, { 
+        data: categories,
+        count: categories.length
+      }, lang === 'ar' ? 'تم جلب الفئات النشطة بنجاح' : 'Active categories fetched successfully');
+    } catch (error) {
+      console.error('Error fetching active categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get active categories', 500));
+    }
+  }
+
+  // الحصول على الفئات الرئيسية مع الفرعية
+  async getMainCategoriesWithSubs(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const categories = await CategoryService.getMainCategoriesWithSubs(lang);
+      
+      return CategoryController.successResponse(res, { 
+        data: categories,
+        count: categories.length
+      }, lang === 'ar' ? 'تم جلب الفئات الرئيسية بنجاح' : 'Main categories fetched successfully');
+    } catch (error) {
+      console.error('Error fetching main categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get main categories', 500));
+    }
+  }
+
+  // الحصول على فئة بالـ ID
+  async getCategoryById(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      const category = await CategoryService.getCategoryById(id, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم جلب الفئة بنجاح' : 'Category fetched successfully');
+    } catch (error) {
+      console.error('Error fetching category:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get category', 500));
+    }
+  }
+
+  // الحصول على فئة بالـ Slug
+  async getCategoryBySlug(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { slug } = req.params;
+      const category = await CategoryService.getCategoryBySlug(slug, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم جلب الفئة بنجاح' : 'Category fetched successfully');
+    } catch (error) {
+      console.error('Error fetching category:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get category', 500));
+    }
+  }
+
+  // ==================== CRUD Methods ====================
+
+  // إنشاء فئة جديدة
+  async createCategory(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const category = await CategoryService.createCategory(req.body, req.file, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم إنشاء الفئة بنجاح' : 'Category created successfully', 201);
+    } catch (error) {
+      console.error('Error creating category:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to create category', 500));
+    }
+  }
+
+  // تحديث فئة
   async updateCategory(req, res, next) {
-    const { id } = req.params;
-    const { name, description, status } = req.body;
-    
     try {
-      const category = await categoryModel.findById(id);
-      if (!category) {
-        return next(new AppError("Category not found", 404));
-      }
-
-      const updateData = {};
-      if (name) updateData.name = name;
-      if (description) updateData.description = description;
-      if (status !== undefined) updateData.status = status === "true" || status === true;
-
-      // رفع صورة الفئة الجديدة إذا وجدت
-      if (req.file) {
-        // حذف الصورة القديمة
-        if (category.image) {
-          const oldImageId = category.image.split('/').pop().split('.')[0];
-          await deleteFromCloudinary(oldImageId, 'categories');
-        }
-        
-        const result = await uploadToCloudinary(req.file.path, 'categories');
-        updateData.image = result.url;
-      }
-
-      const updatedCategory = await categoryModel.findByIdAndUpdate(
-        id,
-        updateData,
-        { new: true }
-      );
-
-      return res.status(200).json({
-        success: true,
-        message: "Category updated successfully",
-        category: updatedCategory,
-      });
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      const category = await CategoryService.updateCategory(id, req.body, req.file, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم تحديث الفئة بنجاح' : 'Category updated successfully');
     } catch (error) {
-      console.log(error);
-      return next(new AppError("Failed to update category", 500));
+      console.error('Error updating category:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to update category', 500));
     }
   }
 
+  // حذف فئة (Soft Delete)
   async deleteCategory(req, res, next) {
-    const { id } = req.params;
-    
     try {
-      const category = await categoryModel.findById(id);
-      if (!category) {
-        return next(new AppError("Category not found", 404));
-      }
-
-      // حذف صورة الفئة من Cloudinary
-      if (category.image) {
-        const imageId = category.image.split('/').pop().split('.')[0];
-        await deleteFromCloudinary(imageId, 'categories');
-      }
-
-      await categoryModel.findByIdAndDelete(id);
-
-      return res.status(200).json({
-        success: true,
-        message: "Category deleted successfully",
-      });
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      await CategoryService.deleteCategory(id, lang);
+      
+      return CategoryController.successResponse(res, {}, 
+        lang === 'ar' ? 'تم حذف الفئة بنجاح' : 'Category deleted successfully');
     } catch (error) {
-      console.log(error);
-      return next(new AppError("Failed to delete category", 500));
+      console.error('Error deleting category:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to delete category', 500));
     }
   }
 
+  // حذف فئة نهائياً (Hard Delete)
+  async hardDeleteCategory(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      const result = await CategoryService.hardDeleteCategory(id, lang);
+      
+      return CategoryController.successResponse(res, result, result.message);
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to delete category', 500));
+    }
+  }
+
+  // ==================== Image Methods ====================
+
+  // رفع صورة الفئة
   async uploadCategoryImage(req, res, next) {
-    const { id } = req.params;
-  
     try {
-      if (!req.file) {
-        return next(new AppError("No image provided", 400));
-      }
-  
-      const category = await categoryModel.findById(id);
-      if (!category) {
-        return next(new AppError("Category not found", 404));
-      }
-  
-      // حذف الصورة القديمة من Cloudinary إن وُجدت
-      if (category.image) {
-        const publicId = category.image
-          .split('/')
-          .slice(-1)[0] // last segment
-          .split('.')[0]; // remove file extension
-        await deleteFromCloudinary(`categories/${publicId}`);
-      }
-  
-      // رفع الصورة الجديدة
-      const result = await uploadToCloudinary(req.file.buffer, 'categories');
-  
-      // تحديث الفئة
-      const updatedCategory = await categoryModel.findByIdAndUpdate(
-        id,
-        { image: result.url },
-        { new: true }
-      );
-  
-      return res.status(200).json({
-        success: true,
-        message: "Category image uploaded successfully",
-        category: updatedCategory,
-      });
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      const category = await CategoryService.uploadCategoryImage(id, req.file, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم رفع صورة الفئة بنجاح' : 'Category image uploaded successfully');
     } catch (error) {
-      console.error(error);
-      return next(new AppError("Failed to upload category image", 500));
+      console.error('Error uploading category image:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to upload category image', 500));
     }
   }
-  
+
+  // حذف صورة الفئة
+  async deleteCategoryImage(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      const category = await CategoryService.deleteCategoryImage(id, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم حذف صورة الفئة بنجاح' : 'Category image deleted successfully');
+    } catch (error) {
+      console.error('Error deleting category image:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to delete category image', 500));
+    }
+  }
+
+  // ==================== Search & Other Methods ====================
+
+  // البحث عن الفئات
+  async searchCategories(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { query } = req.query;
+      const categories = await CategoryService.searchCategories(query, lang);
+      
+      return CategoryController.successResponse(res, { 
+        data: categories,
+        count: categories.length
+      }, categories.length > 0 
+        ? (lang === 'ar' ? 'تم العثور على فئات' : 'Categories found')
+        : (lang === 'ar' ? 'لم يتم العثور على فئات' : 'No categories found'));
+    } catch (error) {
+      console.error('Error searching categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to search categories', 500));
+    }
+  }
+
+  // عدد الفئات
+  async getCategoriesCount(req, res, next) {
+    try {
+      const counts = await CategoryService.getCategoriesCount();
+      
+      return CategoryController.successResponse(res, { counts });
+    } catch (error) {
+      console.error('Error counting categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to count categories', 500));
+    }
+  }
+
+  // إعادة ترتيب الفئات
+  async reorderCategories(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { orderedIds } = req.body;
+      
+      if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+        return next(new AppError(
+          lang === 'ar' ? 'يجب توفير قائمة معرفات الفئات' : 'Ordered IDs array is required',
+          400
+        ));
+      }
+      
+      const result = await CategoryService.reorderCategories(orderedIds, lang);
+      
+      return CategoryController.successResponse(res, result, result.message);
+    } catch (error) {
+      console.error('Error reordering categories:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to reorder categories', 500));
+    }
+  }
+
+  // تغيير حالة الفئة
+  async toggleCategoryStatus(req, res, next) {
+    try {
+      const lang = CategoryController.getLang(req);
+      const { id } = req.params;
+      const category = await CategoryService.toggleCategoryStatus(id, lang);
+      
+      return CategoryController.successResponse(res, { 
+        category 
+      }, lang === 'ar' ? 'تم تغيير حالة الفئة بنجاح' : 'Category status toggled successfully');
+    } catch (error) {
+      console.error('Error toggling category status:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to toggle category status', 500));
+    }
+  }
 }
 
 module.exports = new CategoryController();

@@ -18,9 +18,9 @@ const couponRouter = require("./routes/couponRouter");
 const contactRouter = require("./routes/contactRouter");
 const reviewRouter = require("./routes/reviewRouter");
 const cartRouter = require("./routes/cartRoutes");
-const wishlistRouter = require("./routes/wishlistRoutes");
+const wishlistRouter = require("./routes/wishlistRoutes"); 
 const stripeRouter = require("./routes/stripeRouter");
-
+const searchRouter = require("./routes/searchRoutes");
 // Middleware
 const allowedOrigins = [
   "https://front-end-e-commerce-seto.vercel.app",
@@ -80,6 +80,7 @@ app.use("/api/review", reviewRouter);
 app.use("/api/cart", cartRouter);
 app.use("/api/wishlist", wishlistRouter);
 app.use("/api/stripe", stripeRouter);
+app.use("/api/search", searchRouter);
 
 // Serve static files (if needed)
 if (process.env.NODE_ENV === 'production') {  

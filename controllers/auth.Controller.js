@@ -6,147 +6,303 @@ const AppError = require("../utils/AppError");
 const crypto = require("crypto");
 const { sendPasswordResetEmail, sendVerificationEmail } = require("../utils/emailService");
 
-class Auth { 
-  async isAdmin(req, res, next) {
-    let { loggedInUserId } = req.body;
-    try {
-      let loggedInUserRole = await userModel.findById(loggedInUserId);
-      return res.json({
-        role: loggedInUserRole.role === "admin" ? true : false,
-      });
-    } catch {
-      return next(new AppError("Something went wrong", 500));
-    }
-  }
-
-  async allUser(req, res, next) {
-    try {
-      let allUser = await userModel.find({});
-      return res.json({ users: allUser });
-    } catch {
-      return next(new AppError("Something went wrong", 500));
-    }
-  }
-
-  /* User Registration/Signup controller  */
-  async postSignup(req, res, next) {
+class Auth {
+  /* User Registration controller */
+  async register(req, res, next) {
     let {
       firstName,
       lastName,
       email,
       password,
       cPassword,
+      phone,
       role = "user",
       locale = "en"
     } = req.body;
 
     if (!firstName || !lastName || !email || !password || !cPassword) {
-      return next(new AppError("Filed must not be empty", 400));
+      return next(new AppError("All fields are required", 400));
     }
+
     if (firstName.length < 3 || firstName.length > 25) {
-      return next(new AppError("Name must be 3-25 charecter", 400));
-    } else {
-      if (validateEmail(email)) {
-        firstName = toTitleCase(firstName);
-        lastName = toTitleCase(lastName);
-        if (password !== cPassword) {
-          return next(
-            new AppError("Password and confirm password do not match", 400)
-          );
-        }
-        if ((password.length > 255) | (password.length < 8)) {
-          return next(new AppError("Password must be 8 charecter", 400));
-        } else {
-          // If Email & Number exists in Database then:
-          try {
-            password = bcrypt.hashSync(password, 10);
-            const data = await userModel.findOne({ email: email });
-            if (data) {
-              return next(new AppError("Email already exists", 400));
-            } else {
-              // Generate verification code (6 digits)
-              const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-              const verificationTokenExpires = Date.now() + 3600000; // 1 hour
-              
-              let newUser = new userModel({
-                firstName,
-                lastName,
-                email,
-                password,
-                role,
-                verified: false,
-                verificationToken: verificationCode,
-                verificationTokenExpires: verificationTokenExpires
-              });
-              
-              await newUser.save();
-              
-              // Send verification email
-              const emailSent = await sendVerificationEmail(email, verificationCode, locale);
-              
-              if (!emailSent) {
-                return next(new AppError("Failed to send verification email", 500));
-              }
-              
-              return res.json({
-                success: true,
-                message: locale === 'ar' 
-                  ? "تم إنشاء الحساب بنجاح. يرجى التحقق من بريدك الإلكتروني" 
-                  : "Account created successfully. Please verify your email",
-                userId: newUser._id
-              });
-            }
-          } catch (err) {
-            console.log(err)
-            return next(new AppError("Something went wrong", 500));
-          }
-        }
-      } else {
-        error = {
-          ...error,
-          password: "",
-          firstName: "",
-          lastName: "",
-          email: "Email is not valid",
-        };
-        console.log(error);
-        return next(new AppError(error, 400)); 
+      return next(new AppError("First name must be 3-25 characters", 400));
+    }
+
+    if (!validateEmail(email)) {
+      return next(new AppError("Please provide a valid email", 400));
+    }
+
+    firstName = toTitleCase(firstName);
+    lastName = toTitleCase(lastName);
+
+    if (password !== cPassword) {
+      return next(new AppError("Passwords do not match", 400));
+    }
+
+    if (password.length < 8 || password.length > 255) {
+      return next(new AppError("Password must be at least 8 characters", 400));
+    }
+
+    try {
+      const existingUser = await userModel.findOne({ email });
+      if (existingUser) {
+        return next(new AppError("Email already exists", 400));
       }
+
+      const hashedPassword = bcrypt.hashSync(password, 10);
+      
+      // Generate verification code
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const verificationTokenExpires = Date.now() + 3600000; // 1 hour
+      
+      const newUser = new userModel({
+        firstName,
+        lastName,
+        email,
+        password: hashedPassword,
+        phone,
+        role,
+        verified: false,
+        verificationToken: verificationCode,
+        verificationTokenExpires
+      });
+      
+      await newUser.save();
+      
+      // Send verification email
+      await sendVerificationEmail(email, verificationCode, locale);
+      
+      // Generate JWT token
+      const token = jwt.sign(
+        { _id: newUser._id, role: newUser.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      // Generate refresh token
+      const refreshToken = jwt.sign(
+        { _id: newUser._id },
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+      
+      // Remove password from response
+      const userResponse = newUser.toObject();
+      delete userResponse.password;
+      
+      return res.status(201).json({
+        success: true,
+        message: "Registration successful. Please verify your email",
+        token,
+        refreshToken,
+        user: userResponse
+      });
+    } catch (err) {
+      console.error(err);
+      return next(new AppError("Something went wrong", 500));
     }
   }
 
-  /* User Login/Signin controller  */
-  async postSignin(req, res, next) {
-    let { email, password } = req.body;
+  /* User Login controller */
+  async login(req, res, next) {
+    const { email, password } = req.body;
+    
     if (!email || !password) {
-      return res.json({
-        error: "Fields must not be empty",
-      });
+      return next(new AppError("Email and password are required", 400));
     }
+    
     try {
-      const data = await userModel.findOne({ email: email });
-      if (!data) {
-        return next(new AppError("Invalid email or password", 400));
-      } else {
-        const login = await bcrypt.compare(password, data.password);
-        if (login) {
-          const token = jwt.sign(
-            { _id: data._id, role: data.role },
-            process.env.JWT_SECRET
-          );
-          const encode = jwt.verify(token, process.env.JWT_SECRET);
-          return res.json({ 
-            token: token,
-            success: "Login successfully",
-            data,
-            user: encode,
-          });
-        } else {
-          return next(new AppError("Invalid email or password", 400));
-        }
+      const user = await userModel.findOne({ email }).select('+password');
+      
+      if (!user) {
+        return next(new AppError("Invalid credentials", 401));
       }
+      
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      
+      if (!isPasswordValid) {
+        return next(new AppError("Invalid credentials", 401));
+      }
+      
+      if (!user.verified) {
+        return next(new AppError("Please verify your email first", 401));
+      }
+      
+      // Generate JWT token
+      const token = jwt.sign(
+        { _id: user._id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      // Generate refresh token
+      const refreshToken = jwt.sign(
+        { _id: user._id },
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+      
+      // Remove password from response
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      
+      return res.json({
+        success: true,
+        message: "Login successful",
+        token,
+        refreshToken,
+        user: userResponse
+      });
     } catch (err) {
-      console.log(err);
+      console.error(err);
+      return next(new AppError("Something went wrong", 500));
+    }
+  }
+
+  /* Logout controller */
+  async logout(req, res, next) {
+    try {
+      // In a production app, you might want to blacklist the token here
+      return res.json({
+        success: true,
+        message: "Logout successful"
+      });
+    } catch (err) {
+      return next(new AppError("Something went wrong", 500));
+    }
+  }
+
+  /* Get Current User controller */
+  async getCurrentUser(req, res, next) {
+    try {
+      const user = await userModel.findById(req.user._id).select('-password');
+      
+      if (!user) {
+        return next(new AppError("User not found", 404));
+      }
+      
+      return res.json({
+        success: true,
+        user
+      });
+    } catch (err) {
+      console.error(err);
+      return next(new AppError("Something went wrong", 500));
+    }
+  }
+
+  /* Update Profile controller */
+  async updateProfile(req, res, next) {
+    const { firstName, lastName, phone } = req.body;
+    const userId = req.user._id;
+    
+    try {
+      const updateData = {};
+      
+      if (firstName) {
+        updateData.firstName = toTitleCase(firstName);
+      }
+      
+      if (lastName) {
+        updateData.lastName = toTitleCase(lastName);
+      }
+      
+      if (phone) {
+        updateData.phone = phone;
+      }
+      
+      const updatedUser = await userModel.findByIdAndUpdate(
+        userId,
+        updateData,
+        { new: true, runValidators: true }
+      ).select('-password');
+      
+      if (!updatedUser) {
+        return next(new AppError("User not found", 404));
+      }
+      
+      return res.json({
+        success: true,
+        message: "Profile updated successfully",
+        user: updatedUser
+      });
+    } catch (err) {
+      console.error(err);
+      return next(new AppError("Something went wrong", 500));
+    }
+  }
+
+  /* Change Password controller */
+  async changePassword(req, res, next) {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user._id;
+    
+    if (!currentPassword || !newPassword) {
+      return next(new AppError("Current password and new password are required", 400));
+    }
+    
+    if (newPassword.length < 8) {
+      return next(new AppError("Password must be at least 8 characters", 400));
+    }
+    
+    try {
+      const user = await userModel.findById(userId).select('+password');
+      
+      if (!user) {
+        return next(new AppError("User not found", 404));
+      }
+      
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      
+      if (!isPasswordValid) {
+        return next(new AppError("Current password is incorrect", 400));
+      }
+      
+      user.password = bcrypt.hashSync(newPassword, 10);
+      await user.save();
+      
+      return res.json({
+        success: true,
+        message: "Password changed successfully"
+      });
+    } catch (err) {
+      console.error(err);
+      return next(new AppError("Something went wrong", 500));
+    }
+  }
+
+  /* Get All Users - Admin */
+  async getAllUsers(req, res, next) {
+    try {
+      const users = await userModel.find({}).select('-password');
+      
+      return res.json({
+        success: true,
+        users
+      });
+    } catch (err) {
+      console.error(err);
+      return next(new AppError("Something went wrong", 500));
+    }
+  }
+
+  /* Check if Admin */
+  async isAdmin(req, res, next) {
+    const { loggedInUserId } = req.body;
+    
+    try {
+      const user = await userModel.findById(loggedInUserId);
+      
+      if (!user) {
+        return next(new AppError("User not found", 404));
+      }
+      
+      return res.json({
+        success: true,
+        isAdmin: user.role === "admin"
+      });
+    } catch (err) {
+      console.error(err);
       return next(new AppError("Something went wrong", 500));
     }
   }
@@ -157,7 +313,7 @@ class Auth {
     
     if (!email) {
       return next(new AppError("Email is required", 400));
-    } 
+    }
     
     if (!validateEmail(email)) {
       return next(new AppError("Please provide a valid email", 400));
@@ -167,33 +323,28 @@ class Auth {
       const user = await userModel.findOne({ email });
       
       if (!user) {
-        return next(new AppError("User with this email does not exist", 404));
+        // Don't reveal if email exists for security
+        return res.json({
+          success: true,
+          message: "If an account exists with this email, you will receive a password reset link"
+        });
       }
       
-      // Generate reset token
       const resetToken = crypto.randomBytes(32).toString("hex");
       const resetTokenExpiry = Date.now() + 3600000; // 1 hour
       
-      // Save to user model
       user.resetPasswordToken = resetToken;
       user.resetPasswordExpires = resetTokenExpiry;
       await user.save();
       
-      // Send email with reset link
-      const emailSent = await sendPasswordResetEmail(email, resetToken, locale);
+      await sendPasswordResetEmail(email, resetToken, locale);
       
-      if (!emailSent) {
-        return next(new AppError("Failed to send reset email", 500));
-      }
-      
-      return res.status(200).json({
+      return res.json({
         success: true,
-        message: locale === 'ar' 
-          ? "تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني" 
-          : "Password reset link sent to your email"
+        message: "Password reset link sent to your email"
       });
     } catch (err) {
-      console.log(err);
+      console.error(err);
       return next(new AppError("Something went wrong", 500));
     }
   }
@@ -220,19 +371,17 @@ class Auth {
         return next(new AppError("Invalid or expired token", 400));
       }
       
-      // Update password
       user.password = bcrypt.hashSync(password, 10);
       user.resetPasswordToken = undefined;
       user.resetPasswordExpires = undefined;
       await user.save();
       
-      return res.status(200).json({
+      return res.json({
         success: true,
-        message: "Password has been reset successfully",
-        // In production, don't send this in response
+        message: "Password has been reset successfully"
       });
     } catch (err) {
-      console.log(err);
+      console.error(err);
       return next(new AppError("Something went wrong", 500));
     }
   }
@@ -247,7 +396,7 @@ class Auth {
     
     try {
       const user = await userModel.findOne({
-        email: email,
+        email,
         verificationToken: code,
         verificationTokenExpires: { $gt: Date.now() }
       });
@@ -256,18 +405,17 @@ class Auth {
         return next(new AppError("Invalid or expired verification code", 400));
       }
       
-      // Update user verification status
       user.verified = true;
       user.verificationToken = null;
       user.verificationTokenExpires = null;
       await user.save();
       
-      return res.status(200).json({
+      return res.json({
         success: true,
         message: "Email verified successfully. You can now login."
       });
     } catch (err) {
-      console.log(err);
+      console.error(err);
       return next(new AppError("Something went wrong", 500));
     }
   }
@@ -287,30 +435,21 @@ class Auth {
         return next(new AppError("User not found or already verified", 404));
       }
       
-      // Generate new verification code
       const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
       const verificationTokenExpires = Date.now() + 3600000; // 1 hour
       
-      // Update user with new verification code
       user.verificationToken = verificationCode;
       user.verificationTokenExpires = verificationTokenExpires;
       await user.save();
       
-      // Send verification email
-      const emailSent = await sendVerificationEmail(email, verificationCode, locale);
+      await sendVerificationEmail(email, verificationCode, locale);
       
-      if (!emailSent) {
-        return next(new AppError("Failed to send verification email", 500));
-      }
-      
-      return res.status(200).json({
+      return res.json({
         success: true,
-        message: locale === 'ar' 
-          ? "تم إرسال رمز التحقق الجديد إلى بريدك الإلكتروني" 
-          : "New verification code sent to your email"
+        message: "New verification code sent to your email"
       });
     } catch (err) {
-      console.log(err);
+      console.error(err);
       return next(new AppError("Something went wrong", 500));
     }
   }

@@ -1,171 +1,193 @@
-const Wishlist = require("../models/wishlistModel");
-const Product = require("../models/productModel");
-const AppError = require("../utils/AppError");
-const  StatusCodes  = require("../utils/http-status-codes");
+// controllers/wishlistController.js
+const WishlistService = require('../services/wishlist.service');
+const AppError = require('../utils/AppError');
+const StatusCodes = require('../utils/http-status-codes');
 
-// Get user's wishlist
-const getWishlist = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    console.log(userId);
-    // Find or create the user's wishlist
-    let wishlist = await Wishlist.findOne({ user: userId }).populate({
-      path: "products",
-      select:
-        "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating productSlug",
-    });
+class WishlistController {
+  // Helper للحصول على اللغة
+  static getLang(req) {
+    return req.headers['accept-language']?.split(',')[0]?.split('-')[0] || 
+           req.query.lang || 
+           'en';
+  }
 
-    if (!wishlist) {
-      wishlist = await Wishlist.create({ user: userId, products: [] });
-      wishlist = await wishlist.populate({
-        path: "products",
-        select:
-          "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating productSlug",
-      });
-    }
-
-    res.status(StatusCodes.OK).json({
+  // Helper للاستجابة
+  static successResponse(res, data, message = 'Success', statusCode = 200) {
+    return res.status(statusCode).json({
       success: true,
-      data: {
-        wishlist: wishlist.products,
-      },
-    });
-  } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: "Internal Server Error",
+      message,
+      ...data
     });
   }
-};
 
-// Add product to wishlist
-const addToWishlist = async (req, res, next) => {
-  const userId = req.user._id;
-  const { productId } = req.body;
-
-  if (!productId) {
-    next(new AppError("Product ID is required", 400));
-  }
-
-  // Check if product exists
-  const product = await Product.findById(productId);
-  if (!product) {
-    next(new AppError("Product not found", 404));
-  }
-
-  // Find or create the user's wishlist
-  let wishlist = await Wishlist.findOne({ user: userId });
-
-  if (!wishlist) {
-    wishlist = await Wishlist.create({ user: userId, products: [productId] });
-  } else {
-    // Check if product is already in wishlist
-    if (wishlist.products.includes(productId)) {
-      return res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Product already in wishlist",
+  // الحصول على wishlist المستخدم
+  async getWishlist(req, res, next) {
+    try {
+      const lang = WishlistController.getLang(req);
+      const userId = req.user._id;
+      
+      const wishlist = await WishlistService.getUserWishlist(userId, lang);
+      
+      return WishlistController.successResponse(res, {
         data: {
-          wishlist: await getPopulatedWishlist(userId),
-        },
-      });
+          wishlist: wishlist.products,
+          count: wishlist.products.length
+        }
+      }, lang === 'ar' ? 'تم جلب قائمة الأمنيات بنجاح' : 'Wishlist fetched successfully');
+    } catch (error) {
+      console.error('Error getting wishlist:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get wishlist', 500));
     }
-
-    // Add product to wishlist
-    wishlist.products.push(productId);
-    await wishlist.save();
   }
 
-  // Get populated wishlist
-  const populatedWishlist = await getPopulatedWishlist(userId);
+  // إضافة منتج إلى الـ wishlist
+  async addToWishlist(req, res, next) {
+    try {
+      const lang = WishlistController.getLang(req);
+      const userId = req.user._id;
+      const { productId } = req.body;
 
-  res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Product added to wishlist",
-    data: {
-      wishlist: populatedWishlist,
-    },
-  });
-};
+      if (!productId) {
+        return next(new AppError(
+          lang === 'ar' ? 'معرف المنتج مطلوب' : 'Product ID is required',
+          400
+        ));
+      }
 
-// Remove product from wishlist
-const removeFromWishlist = async (req, res, next) => {
-  const userId = req.user._id;
-  const { productId } = req.params;
+      const result = await WishlistService.addProductToWishlist(userId, productId, lang);
 
-  if (!productId) {
-    next(new AppError("Product ID is required", 400));
+      return WishlistController.successResponse(res, {
+        data: {
+          wishlist: result.wishlist.products,
+          count: result.wishlist.products.length,
+          added: result.added
+        }
+      }, result.message);
+    } catch (error) {
+      console.error('Error adding to wishlist:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to add to wishlist', 500));
+    }
   }
 
-  // Find the user's wishlist
-  const wishlist = await Wishlist.findOne({ user: userId });
+  // إزالة منتج من الـ wishlist
+  async removeFromWishlist(req, res, next) {
+    try {
+      const lang = WishlistController.getLang(req);
+      const userId = req.user._id;
+      const { productId } = req.params;
 
-  if (!wishlist) {
-    next(new AppError("Wishlist not found", 404));
+      if (!productId) {
+        return next(new AppError(
+          lang === 'ar' ? 'معرف المنتج مطلوب' : 'Product ID is required',
+          400
+        ));
+      }
+
+      const result = await WishlistService.removeProductFromWishlist(userId, productId, lang);
+
+      return WishlistController.successResponse(res, {
+        data: {
+          wishlist: result.wishlist.products,
+          count: result.wishlist.products.length
+        }
+      }, result.message);
+    } catch (error) {
+      console.error('Error removing from wishlist:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to remove from wishlist', 500));
+    }
   }
 
-  // Remove product from wishlist
-  wishlist.products = wishlist.products.filter(
-    (id) => id.toString() !== productId
-  );
+  // مسح الـ wishlist
+  async clearWishlist(req, res, next) {
+    try {
+      const lang = WishlistController.getLang(req);
+      const userId = req.user._id;
 
-  await wishlist.save();
+      const result = await WishlistService.clearWishlist(userId, lang);
 
-  // Get populated wishlist
-  const populatedWishlist = await getPopulatedWishlist(userId);
-
-  res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Product removed from wishlist",
-    data: {
-      wishlist: populatedWishlist,
-    },
-  });
-};
-
-// Clear wishlist
-const clearWishlist = async (req, res) => {
-  const userId = req.user._id;
-
-  // Find the user's wishlist
-  const wishlist = await Wishlist.findOne({ user: userId });
-
-  if (!wishlist) {
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Wishlist cleared",
-      data: {
-        wishlist: [],
-      },
-    });
+      return WishlistController.successResponse(res, {
+        data: {
+          wishlist: [],
+          count: 0
+        }
+      }, result.message);
+    } catch (error) {
+      console.error('Error clearing wishlist:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to clear wishlist', 500));
+    }
   }
 
-  // Clear wishlist
-  wishlist.products = [];
-  await wishlist.save();
+  // التحقق من وجود منتج في الـ wishlist
+  async checkProduct(req, res, next) {
+    try {
+      const lang = WishlistController.getLang(req);
+      const userId = req.user._id;
+      const { productId } = req.params;
 
-  res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Wishlist cleared",
-    data: {
-      wishlist: [],
-    },
-  });
-};
+      const isInWishlist = await WishlistService.isProductInWishlist(userId, productId, lang);
 
-// Helper function to get populated wishlist
-const getPopulatedWishlist = async (userId) => {
-  const wishlist = await Wishlist.findOne({ user: userId }).populate({
-    path: "products",
-    select:
-      "_id productName productPrice productDescription productImage productCategory productBrand productQuantity productSizes productColors productRating",
-  });
+      return WishlistController.successResponse(res, {
+        data: { isInWishlist }
+      }, lang === 'ar' ? 'تم التحقق بنجاح' : 'Check completed successfully');
+    } catch (error) {
+      console.error('Error checking product:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to check product', 500));
+    }
+  }
 
-  return wishlist ? wishlist.products : [];
-};
+  // الحصول على عدد المنتجات
+  async getCount(req, res, next) {
+    try {
+      const userId = req.user._id;
+      const count = await WishlistService.getWishlistCount(userId);
 
-module.exports = {
-  getWishlist,
-  addToWishlist,
-  removeFromWishlist,
-  clearWishlist,
-};
+      return WishlistController.successResponse(res, {
+        data: { count }
+      });
+    } catch (error) {
+      console.error('Error getting count:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to get count', 500));
+    }
+  }
+
+  // Toggle منتج (إضافة أو إزالة)
+  async toggleProduct(req, res, next) {
+    try {
+      const lang = WishlistController.getLang(req);
+      const userId = req.user._id;
+      const { productId } = req.body;
+
+      if (!productId) {
+        return next(new AppError(
+          lang === 'ar' ? 'معرف المنتج مطلوب' : 'Product ID is required',
+          400
+        ));
+      }
+
+      const isInWishlist = await WishlistService.isProductInWishlist(userId, productId, lang);
+
+      let result;
+      if (isInWishlist) {
+        result = await WishlistService.removeProductFromWishlist(userId, productId, lang);
+        result.action = 'removed';
+      } else {
+        result = await WishlistService.addProductToWishlist(userId, productId, lang);
+        result.action = 'added';
+      }
+
+      return WishlistController.successResponse(res, {
+        data: {
+          wishlist: result.wishlist.products,
+          count: result.wishlist.products.length,
+          action: result.action,
+          isInWishlist: !isInWishlist
+        }
+      }, result.message);
+    } catch (error) {
+      console.error('Error toggling product:', error);
+      next(error instanceof AppError ? error : new AppError('Failed to toggle product', 500));
+    }
+  }
+}
+
+module.exports = new WishlistController();

@@ -1,15 +1,13 @@
+// routes/reviewRoutes.js
 const express = require("express");
 const router = express.Router();
-const reviewController = require("../controllers/review.Controller");
+const ReviewController = require("../controllers/review.Controller");
 const { authMiddleware, isAdmin } = require("../middlewares/authMiddleware");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 
-// تكوين تخزين الصور (مؤقتًا قبل الرفع إلى Cloudinary)
+// تكوين تخزين الصور
 const storage = multer.memoryStorage();
 
-// فلتر للتأكد من أن الملف المرفوع هو صورة
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
@@ -24,27 +22,83 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
-router.get("/", reviewController.getAllReviews);
-router.get("/:productId", reviewController.getReviewsByProductId);
-router.post("/", authMiddleware, reviewController.createReview);
-// router.put(
-//   "/:productId",
-//   authMiddleware,
-//   reviewController.updateReviewByProductId
-// );
-router.delete("/:id", authMiddleware, reviewController.deleteReview);
+// ==================== Public Routes ====================
+
+// الحصول على جميع المراجعات
+router.get("/", ReviewController.getAllReviews);
+
+// الحصول على مراجعات منتج معين
+router.get("/product/:productId", ReviewController.getReviewsByProductId);
+
+// ==================== Protected Routes ====================
+
+// الحصول على مراجعات المستخدم الحالي
+router.get("/my-reviews", authMiddleware, ReviewController.getUserReviews);
+
+// إنشاء مراجعة جديدة
 router.post(
-  "/uploadReviewImage",
+  "/",
+  authMiddleware,
+  upload.array("images", 5),
+  ReviewController.createReview
+);
+
+// تحديث مراجعة
+router.put(
+  "/:reviewId",
+  authMiddleware,
+  upload.array("images", 5),
+  ReviewController.updateReviewById
+);
+
+// حذف مراجعة
+router.delete("/:id", authMiddleware, ReviewController.deleteReview);
+
+// رفع صورة للمراجعة
+router.post(
+  "/upload-image",
   authMiddleware,
   upload.single("image"),
-  reviewController.uploadReviewImage
+  ReviewController.uploadReviewImage
 );
-// إضافة مسار لحذف صورة المراجعة
+
+// حذف صورة من المراجعة
 router.delete(
-  "/deleteReviewImage",
+  "/delete-image",
   authMiddleware,
-  reviewController.deleteReviewImage
+  ReviewController.deleteReviewImage
 );
-router.put("/reviews/:reviewId", reviewController.updateReviewById);
+
+// الإبلاغ عن مراجعة
+router.post(
+  "/:reviewId/report",
+  authMiddleware,
+  ReviewController.reportReview
+);
+
+// تمييز مراجعة كمفيدة
+router.post(
+  "/:reviewId/helpful",
+  authMiddleware,
+  ReviewController.markHelpful
+);
+
+// ==================== Admin Routes ====================
+
+// إحصائيات المراجعات
+router.get(
+  "/admin/stats",
+  authMiddleware,
+  isAdmin,
+  ReviewController.getReviewStats
+);
+
+// تغيير حالة المراجعة
+router.patch(
+  "/:reviewId/toggle-status",
+  authMiddleware,
+  isAdmin,
+  ReviewController.toggleReviewStatus
+);
 
 module.exports = router;

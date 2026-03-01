@@ -1,15 +1,13 @@
+// routes/productRoutes.js
 const express = require("express");
 const router = express.Router();
-const productController = require("../controllers/product.Controller");
-const multer = require("multer"); 
-const path = require("path");
-const fs = require("fs");
+const ProductController = require("../controllers/product.Controller");
+const multer = require("multer");
 const { authMiddleware, isAdmin } = require("../middlewares/authMiddleware");
- 
-// تكوين تخزين الصور (مؤقتًا قبل الرفع إلى Cloudinary)
+
+// تكوين تخزين الصور
 const storage = multer.memoryStorage();
 
-// فلتر للتأكد من أن الملف المرفوع هو صورة
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
@@ -21,45 +19,92 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// Public routes (no authentication required)
-router.get("/filter", productController.filterProducts);
-router.get("/available-filters", productController.getAvailableFilters);
-router.get("/search", productController.searchProduct); // Add dedicated search endpoint
-router.get("/discounted", productController.getDiscountedProducts); // Make discounted products public
-router.get("/bestselling", productController.getBestSellingProducts); // Make best selling products public
+// ==================== Public Routes ====================
 
-// Protected routes
-router.get("/", productController.getAllProduct);
-router.get("/new",  productController.getNewProducts);
-router.get("/dashboard/count", authMiddleware, isAdmin, productController.getProductsCount);
-router.get("/:slug", productController.getProductBySlug);
+// البحث والفلترة (يجب أن تكون قبل الـ routes الأخرى)
+router.get("/filter", ProductController.filterProducts);
+router.get("/available-filters", ProductController.getAvailableFilters);
+router.get("/search", ProductController.searchProducts);
+
+// المنتجات المميزة
+router.get("/discounted", ProductController.getDiscountedProducts);
+router.get("/bestselling", ProductController.getBestSellingProducts);
+router.get("/new", ProductController.getNewProducts);
+
+// جميع المنتجات
+router.get("/", ProductController.getAllProducts);
+
+// الحصول على منتج بالـ Slug
+router.get("/slug/:slug", ProductController.getProductBySlug);
+router.get("/:slug", ProductController.getProductBySlug); // للتوافق مع الكود القديم
+
+// ==================== Protected Routes ====================
+
+// Dashboard
+router.get(
+  "/dashboard/count",
+  authMiddleware,
+  isAdmin,
+  ProductController.getProductsCount
+);
+
+// تصدير المنتجات
+router.get(
+  "/export/all",
+  authMiddleware,
+  isAdmin,
+  ProductController.exportProducts
+);
+
+// إنشاء منتج
 router.post(
   "/",
   authMiddleware,
   isAdmin,
-  upload.any(), // Supports both productImage and productImages
-  productController.createProduct
+  upload.any(),
+  ProductController.createProduct
 );
+
+// تحديث منتج بالـ Slug
 router.put(
   "/:slug",
   authMiddleware,
   isAdmin,
   upload.any(),
-  productController.editProduct
+  ProductController.editProduct
 );
+
+// حذف منتج بالـ Slug
 router.delete(
   "/:slug",
   authMiddleware,
   isAdmin,
-  productController.deleteProduct
+  ProductController.deleteProduct
 );
+
+// الحصول على المنتجات حسب التصنيف
 router.get(
-  "/category/:slug",
+  "/category/:categoryId",
+  ProductController.getProductsByCategory
+);
+
+// تحديث حالة المنتجات
+router.post(
+  "/update-statuses",
   authMiddleware,
-  productController.getProductByCategory
+  isAdmin,
+  ProductController.updateProductStatuses
+);
+
+// إعادة تعيين الخصومات المنتهية
+router.post(
+  "/reset-discounts",
+  authMiddleware,
+  isAdmin,
+  ProductController.resetExpiredDiscounts
 );
 
 module.exports = router;
